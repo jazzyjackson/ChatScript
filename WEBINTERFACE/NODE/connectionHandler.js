@@ -1,4 +1,5 @@
 const net = require('net');
+const spawn = require('child_process').spawn
 //more information on the net built-in module of node in the docs: https://nodejs.org/api/all.html#net_net_connect_options_connectlistener
 //allows us to make raw TCP connections
 const chatscript_config = {port: process.env.CSPORT || 1024, 
@@ -11,16 +12,23 @@ it will check an environment variable to see if its running interactively
 (in a terminal) or as a child process to another node server.
 As a node module, this file exposes an api for transmitting 
 username, botname, and message to the ChatScript server
+As a standalone process, it provides kind of a two-for-one 'local' chat 
+ + the ability to chat with the server from other processes.
 */
-//the initial message must be null for a new user. a null botname will be routed to default bot.
-//for future messages to default username and botname, you can simply call chat with a single argument.
-chat(':reset', username, botname)
-.then(chatBotResponse => console.log(chatBotResponse))
-.catch(errorMsg => console.log(errorMsg))
 
-let operating_system = null;
-if(process.env.OS && process.env.OS.toUpperCase().includes('WINDOWS')){
-  operating_system = 'WINDOWS'
+//When a server starts, it should call cs_init to check it connection and offer to start chatscript
+cs_interactive_init(username,botname)
+function cs_interactive_init(username, botname){
+  //the initial message must be null for a new user. a null botname will be routed to default bot.
+  //for future messages to default username and botname, you can simply call chat with a single argument.
+  return chat(':reset', username, botname)
+        .then(botResponse => {
+          console.log(botResponse)
+          
+        })
+        .catch(errorMsg => {
+          console.log(errorMsg)
+        })
 }
 
 function chat(message, username, botname){
@@ -48,4 +56,10 @@ function chat(message, username, botname){
       reject(`failed to connect to ${chatscript_config.host}:${chatscript_config.port}`)  
     })
   })
+}
+
+function checkOS(){
+  if(process.env.OS && process.env.OS.toUpperCase().includes('WINDOWS')){
+    return 'WINDOWS';
+  }
 }

@@ -1,11 +1,17 @@
 const net = require('net');
 const spawn = require('child_process').spawn
+const exec = require('child_process').exec
+const path = require('path')
 //more information on the net built-in module of node in the docs: https://nodejs.org/api/all.html#net_net_connect_options_connectlistener
 //allows us to make raw TCP connections
 const chatscript_config = {port: process.env.CSPORT || 1024, 
                            host: process.env.CSHOST || 'localhost'}
 const username = 'guest' 
 const botname = 'harry'
+
+process.chdir(path.join(__dirname, '../../'))
+let chatserver = spawn('./BINARIES/chatscript',['port=1024'])
+chatserver.stdout.on('data', data => console.log(data))
 /*this username is for initial connection. Once the server is running, 
 this file will attempt to connect to chatscript. If it's successful,
 it will check an environment variable to see if its running interactively 
@@ -18,6 +24,7 @@ As a standalone process, it provides kind of a two-for-one 'local' chat
 
 //When a server starts, it should call cs_init to check it connection and offer to start chatscript
 cs_interactive_init(username,botname)
+
 function cs_interactive_init(username, botname){
   //the initial message must be null for a new user. a null botname will be routed to default bot.
   //for future messages to default username and botname, you can simply call chat with a single argument.
@@ -28,6 +35,7 @@ function cs_interactive_init(username, botname){
         })
         .catch(errorMsg => {
           console.log(errorMsg)
+
         })
 }
 

@@ -1,10 +1,10 @@
 const net = require('net');
-const spawn = require('child_process').spawn
-const exec = require('child_process').exec
+const child_process = require('child_process').spawn
 const path = require('path')
 const os = require('os')
-//more information on the net built-in module of node in the docs: https://nodejs.org/api/all.html#net_net_connect_options_connectlistener
-//allows us to make raw TCP connections
+/*more information on the net built-in module of node in the docs:
+https://nodejs.org/api/all.html#net_net_connect_options_connectlistener
+allows us to make raw TCP connections*/
 
 class ConnectionHandler {
   constructor(chatscript_config){
@@ -18,15 +18,13 @@ class ConnectionHandler {
   }
 
   log(output){
-    if(this.chatscript_config.debug == true){
-      console.log(output)
-    }
+    if(this.chatscript_config.debug == true) console.log(output)
   }
 
-  //give advice if contacting the server failed + starting the server as a child process failed.
+  //Someday you'll be able to ask the bot why its broken, but until then, this switch case diagnosis will have to do
   debug(){
     switch(os.type()){
-      case 'Darwin': console.log(`I was unable to start ChatScript server. You likely need to navigate to ChatScript/SRC and run 'make server' and try again`);
+      case 'Darwin': console.log(`I was unable to start ChatScript server. You likely need to navigate to ChatScript/SRC and run 'make server' and try again`)
     }
   }
 }
@@ -44,17 +42,22 @@ ConnectionHandler.prototype.chat = function(message, username, botname){
       let debugString = chatstring.replace(/\u{0000}/ug,'NULL')
       debugString = debugString.replace(/[\r\n]/g,'')
       this.log(`transmitting ${debugString}`) 
-      client.write(chatstring);
-    });
-    client.on('data', (data) => {
-      resolve({output: data.toString(), input: message});
+      client.write(chatstring)
+    })
+    client.on('data', botResponse => {
+      let data = botResponse.toString()
+      //if the bot returned JSON, parse it and use that as the response object. 
+      //Otherwise, create a new object with an output property
+      let response = (data[0] === '{') ? JSON.parse(data) : {output: data} 
+      response.input = message
+      resolve(response);
       client.end();
-    });
+    })
     client.on('end', () => {
       //this will reject the promise only if the connection is closed before data is received. 
       //If the promise is resolved by receiving data, great, this rejection won't make a difference
-      reject({message: `the server at ${host}:${port} closed the connection.`});
-    });
+      reject({message: `the server at ${host}:${port} closed the connection.`})
+    })
     client.on('error', () => {
       reject({error: `failed to connect to ${host}:${port}`})
     })
@@ -66,7 +69,7 @@ ConnectionHandler.prototype.startServer = function(){
       let {port, app} = this.chatscript_config
       let argarray = (app == 'chatscript') ? [`port=${port}`] : [] //necessary argument array for windows server
       this.log(`cwd: ${path.join(__dirname, '../../')} \ncmd: ./BINARIES/${app} ${argarray.join('')}`) //for debugging
-      let chatserver = spawn(`./BINARIES/${app}`,argarray,{cwd: path.join(__dirname, '../../')})
+      let chatserver = child_process(`./${app}`,argarray,{cwd: path.join(__dirname, '../../../BINARIES')})
       chatserver.stdout.on('close', error => this.log('closed connection with chatscript server.'))
       chatserver.on('error', this.debug)
       this.log(`starting chatscript as a child process of connectionHandler.js on localhost:${port}`)    

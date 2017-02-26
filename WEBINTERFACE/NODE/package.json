@@ -1,0 +1,16 @@
+{
+  "name": "chatscript_node_wrapper",
+  "version": "1.0.0",
+  "description": "A node API and GUI for ChatScript",
+  "main": "app-simple.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Colten Jackson",
+  "license": "ISC",
+  "dependencies": {
+    "body-parser": "^1.16.1",
+    "cookie-parser": "^1.4.3",
+    "express": "^4.14.1"
+  }
+}

@@ -4,6 +4,7 @@ VS2010/ipch
 VS2015/
 mackore/KoreNLPXC/KoreNLPXC.xcodeproj/xcuserdata/
 mackore/KoreNLPXC/KoreNLPXC.xcodeproj/project.xcworkspace/xcuserdata/
+node_modules/
 
 # file types in folder
 TMP/**/*.txt

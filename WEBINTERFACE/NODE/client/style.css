@@ -1,0 +1,21 @@
+body {
+	background: lightgrey;
+}
+.input, .output {
+	padding: 10px;
+    margin: 5px;
+    background: white;
+    clear: both;
+}
+#convo {
+	width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column-reverse;
+}
+
+input {
+    display: block;
+    width: 70%;
+    margin: 0 auto;
+}

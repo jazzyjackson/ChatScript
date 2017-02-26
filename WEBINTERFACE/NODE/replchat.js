@@ -1,4 +1,4 @@
-let ConnectionHandler = require('./connectionHandler.js')
+let ConnectionHandler = require('./server/connectionHandler.js')
 let repl = require('repl')
 
 const chatscript_config = {port: process.env.CSPORT || 1024, 

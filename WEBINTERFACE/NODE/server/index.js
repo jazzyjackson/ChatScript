@@ -10,7 +10,11 @@ module.exports = props =>
             <form>
                 <input type="text" placeholder="say something"></input>
             </form>
-            <div class="output">${props.botResponse.output}</div>
+            <div class="message">
+                <div class="output">
+                    ${props.botResponse.output}
+                </div>
+            </div>
         </div>
   
     </body>`

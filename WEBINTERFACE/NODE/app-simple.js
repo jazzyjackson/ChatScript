@@ -2,13 +2,10 @@ const express = require('express')
 const app     = express() 
 const server  = require('http').Server(app)
 const path    = require('path')
-const fs      = require('fs')
-const os      = require('os')
 const parse   = require('body-parser')
 const cookies = require('cookie-parser')
 const index   = require('./server/index')
 const localhostPort = 3000
-const botdirectory = path.join(__dirname, 'brain')
 
 app.use(cookies())
 app.use(parse.json());

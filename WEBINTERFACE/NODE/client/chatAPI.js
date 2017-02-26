@@ -13,7 +13,11 @@ input.addEventListener('submit', event => {
 function makeBubbles(botResponse){
     let convo = document.getElementById('convo')
     convo.prependChild(parseHTML(renderInput(botResponse)))
-    convo.prependChild(parseHTML(renderOutput(botResponse)))
+    //optionally delay, longer message takes longer to pop up.
+    //makes it feel a little more realistic, 'the bot is typing'
+    setTimeout(()=>{
+        convo.prependChild(parseHTML(renderOutput(botResponse)))
+    }, botResponse.output.length * 5) //character length * 5ms
 }
 function errorBubble(error){
     let convo = document.getElementById('convo')

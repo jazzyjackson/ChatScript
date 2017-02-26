@@ -17,7 +17,7 @@ Harry.chat(':reset')
           console.log('error: ', response.error)
           console.log('Let me try to start the chatscript server myself')
           Harry.startServer()
-          //though windows doesn't mind attempting to hit the server immediately after starting the process, mac os wants some time. Unfortenately, the child process doesn't provide immediate feedback if starting the server was successful or not, so we just have to try to hit it again.
+          //though windows doesn't mind attempting to hit the server immediately after starting the process, mac os wants some time. Unfortunately, the child process doesn't provide immediate feedback if starting the server was successful or not, so we just have to try to hit it again.
           setTimeout(() => {
             Harry.chat(':reset')
                 .then(botResponse => console.log(botResponse.output))

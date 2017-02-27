@@ -8,6 +8,7 @@ const parse   = require('body-parser')
 const cookies = require('cookie-parser')
 const index   = require('./server/index')
 const editor  = require('./server/editor.js')
+const jobs    = require('./server/jobScheduler') //optional, for sub processes
 const localhostPort = 3000
 
 app.use(cookies())

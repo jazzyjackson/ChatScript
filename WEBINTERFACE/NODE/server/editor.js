@@ -14,6 +14,7 @@ module.exports = topics_object_array =>
             <textarea> Nothing to see here </textarea>
         </div>
         <div id="chatBody">
+            <div draggable="true" id="chatResize"></div>
             <iframe src="/">
         </div>
     </body>

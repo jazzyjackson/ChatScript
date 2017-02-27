@@ -1,6 +1,5 @@
 #dirTree {
     min-width: 195px;
-    overflow: auto;
     height: 100%;
     float: left;
     border-right: 2px solid #a3a3a3;
@@ -12,6 +11,7 @@ body {
 
 ul {
     padding-left: 0;
+    padding-right: 0;
     list-style: none;
     font-family: sans-serif;
     font-weight: 100;
@@ -20,9 +20,13 @@ ul {
 li {
     padding: 3px;
     padding-left: 25px;
+    cursor: default;
+}
+li.filename {
+  cursor: pointer;
 }
 
-li:hover {
+li.filename:not(.active):hover {
     background: rgba(50,200,250,0.2);
 }
 
@@ -31,8 +35,8 @@ li.active {
     border-right: none;
     background: #f7f7f7;
     margin-right: -2px;
-    margin-left: 11px;
-    padding-left: 12px;
+    margin-left: 6px;
+    padding-left: 16px;
 }
 
 li.edited::before {
@@ -60,6 +64,13 @@ li.edited::before {
     bottom: 0;
     width: 100%;
     z-index: 9;
+}
+#chatResize {
+    width: 100%;
+    height: 10px;
+    position: relative;
+    top: 7px;
+    cursor: ns-resize;
 }
 
 iframe {

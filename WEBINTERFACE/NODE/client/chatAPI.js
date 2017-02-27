@@ -15,9 +15,11 @@ function makeBubbles(botResponse){
     convo.prependChild(parseHTML(renderInput(botResponse)))
     //optional delay, longer message takes longer to pop up.
     //makes it feel a little more realistic, 'the bot is typing'
+    //don't delay if the input was a command.
+    let delay = botResponse.input[0] == ':' ? 0 : botResponse.output.length * 5;
     setTimeout(()=>{
         convo.prependChild(parseHTML(renderOutput(botResponse)))
-    }, botResponse.output.length * 5) //character length * 5ms
+    }, delay) //character length * 5ms
 }
 
 function errorBubble(error){

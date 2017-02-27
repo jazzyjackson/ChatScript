@@ -1,0 +1,68 @@
+#dirTree {
+    min-width: 195px;
+    overflow: auto;
+    height: 100%;
+    float: left;
+    border-right: 2px solid #a3a3a3;
+}
+
+body {
+    margin: 0;
+}
+
+ul {
+    padding-left: 0;
+    list-style: none;
+    font-family: sans-serif;
+    font-weight: 100;
+}
+
+li {
+    padding: 3px;
+    padding-left: 25px;
+}
+
+li:hover {
+    background: rgba(50,200,250,0.2);
+}
+
+li.active {
+    border: 2px solid #a3a3a3;
+    border-right: none;
+    background: #f7f7f7;
+    margin-right: -2px;
+    margin-left: 11px;
+    padding-left: 12px;
+}
+
+li.edited::before {
+    content: '';
+    width: 8px;
+    display: inline-block;
+    height: 8px;
+    margin-right: 5px;
+    margin-left: -13px; /* width + margin-right, compensate so that the text doesnt become offset*/
+    border-radius: 8px;
+    background: black;
+}
+
+#editorBody {
+    height: 100%;
+}
+
+.CodeMirror {
+    height: 100% !important; /*overwrite CodeMirror.css*/
+}
+
+#chatBody {
+    position: fixed;
+    height: 250px;
+    bottom: 0;
+    width: 100%;
+    z-index: 9;
+}
+
+iframe {
+    width: 100%;
+    height: 100%;
+}

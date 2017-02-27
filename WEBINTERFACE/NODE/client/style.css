@@ -68,6 +68,11 @@ form input {
     background-color: white;
   }
 }
+@media (max-height: 360px){
+    body {
+        background-position: 97% 0%; /* On very short screens, robots eyes peak out*/
+    }
+}
 @media (min-width: 1500px){
   #convo{
     padding: 0 25%

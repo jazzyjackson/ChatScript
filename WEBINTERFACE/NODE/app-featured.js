@@ -60,8 +60,15 @@ app.get('/:botname/brains', (req,res) => {
         
         Promise.all(topic_directories.map(topic_directory => {
             return new Promise((resolve, reject) => {
-                fs.readdir(path.join(botDirectory, topic_directory), (err, files) => {
-                    if(err) reject(err)
+                //each line of topic_directories might be a direcotyr, or a .top file. let's check.
+                let thisPath = path.join(botDirectory, topic_directory);
+                if(fs.statSync(path.join(botDirectory, topic_directory)).isFile()){
+                    let filenameIndex = topic_directory.match(/[\w.]+$/).index
+                    resolve({dirname: topic_directory.slice(0,filenameIndex).replace(/RAWDATA/,''),
+                             files: [topic_directory.slice(filenameIndex)]})
+                }
+                fs.readdir(thisPath, (err, files) => {
+                    if(err){ reject(err); return; }
                     files = files.filter(file => {
                         //filter out sub directories.
                         return fs.statSync(path.join(botDirectory, topic_directory, file)).isFile()

@@ -79,9 +79,11 @@ document.getElementById('chatResize').addEventListener('dragstart', event => {
 
 document.getElementById('chatResize').addEventListener('drag', event => {
     console.log(document.activeElement)
-    let newHeight =  (event.view.window.document.documentElement.clientHeight - event.pageY)
+    let newHeight = (event.view.window.document.documentElement.clientHeight - event.pageY)
     if(chatBody.style.height != newHeight && event.pageY){ //there's a fritz in chrome where the pageY value is 0 when you stop dragging, so, throw that event out. Also only modify the DOM when there's a good reason.
-        chatBody.style.height = newHeight
+        dirTree.style.height = `Calc(100% - ${newHeight}px + 10px)`
+        editorBody.style.height = `Calc(100% - ${newHeight}px + 10px)`
+        chatBody.style.height = `${newHeight}px`
     }
 })
 

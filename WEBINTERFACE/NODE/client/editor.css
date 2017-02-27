@@ -1,6 +1,6 @@
 #dirTree {
     min-width: 195px;
-    height: 100%;
+    height: Calc(100% - 240px); /* 240px is the starting height of the iframe - 10px */
     float: left;
     border-right: 2px solid #a3a3a3;
 }
@@ -51,7 +51,7 @@ li.edited::before {
 }
 
 #editorBody {
-    height: 100%;
+    height: Calc(100% - 240px); /* 240px is the starting height of the iframe - 10px */
 }
 
 .CodeMirror {

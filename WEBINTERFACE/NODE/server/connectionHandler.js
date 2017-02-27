@@ -32,17 +32,15 @@ class ConnectionHandler {
 ConnectionHandler.prototype.chat = function(message, username, botname){ 
   //guest and harry are default values if chat is called with only a message
   let {port, host, defaultBot, defaultUser} = this.chatscript_config
+  username || (username = defaultUser) // set user if not passed to func
+  botname || (botname = defaultBot) //set bot if not passed to func
   return new Promise((resolve, reject)=>{
     let client = net.connect(this.chatscript_config, () => {
       this.log(`connection established to ${host}:${port}`)
       /*on a successful connection, write to the socket with 3 arguments, null char (\u0000) terminated)
       details of this message protocol may be found in DOCUMENTATION/CLIENTS-AND-SERVERS/ChatScript-ClientServer-Manual */
-      let chatstring = `${username || defaultUser }\u0000${botname || defaultBot }\u0000${message}\u0000`
-      //replace null characters with something else for debugging purposes. throw out new line char.
-      let debugString = chatstring.replace(/\u{0000}/ug,'NULL')
-      debugString = debugString.replace(/[\r\n]/g,'')
-      this.log(`transmitting ${debugString}`) 
-      client.write(chatstring)
+      this.log(String.raw`${username}\0${botname}\0${message.trim()}\0`) 
+      client.write(`${username}\0${botname}\0${message}\0`)
     })
     client.on('data', botResponse => {
       let data = botResponse.toString()

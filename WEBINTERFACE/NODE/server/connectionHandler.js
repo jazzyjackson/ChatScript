@@ -56,7 +56,8 @@ ConnectionHandler.prototype.chat = function(message, username, botname){
       //If the promise is resolved by receiving data, great, this rejection won't make a difference
       reject({message: `the server at ${host}:${port} closed the connection.`})
     })
-    client.on('error', () => {
+    client.on('error', error => {
+      console.log(error)
       reject({error: `failed to connect to ${host}:${port}`})
     })
   })

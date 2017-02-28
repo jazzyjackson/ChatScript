@@ -8,7 +8,6 @@ const parse   = require('body-parser')
 const cookies = require('cookie-parser')
 const index   = require('./server/index')
 const editor  = require('./server/editor.js')
-const jobs    = require('./server/jobScheduler') //optional, for sub processes
 const localhostPort = 3000
 
 app.use(cookies())
@@ -101,13 +100,39 @@ app.get('/chat', (req,res) => {
     let message = req.query.message
     let {username, botname} = req.cookies
     ChatScript.chat(message, username, botname)
-    .then(botResponse => res.json(botResponse))
+    .then(botResponse => {res.json(botResponse); return botResponse})
+    .then(jobObj => {
+        if(jobObj.type){
+            // jobs.dispatchTask(jobObj, clientSocket) //clientSocket.send(objUpdate)
+            //if
+        }
+    })
     .catch(error => res.status(400).send(error))
 })
 
 app.get('*', (req,res) => {
     res.send("no such route")
 })
+
+/* Optional for Job Scheduling.*/ 
+
+//Heres the websocket mapping strategy
+//A page will establish a socket.
+//On page load, socket established, the socket handler can make an httpupgrade to ask for the clients cookie. It will then save itself in a server global: 'Socket Map', 
+//A POST message that might dispatch a job, that POST req has a cookie on it.
+// Use the cookie as your key
+//But what about multiple socket connections with the same client? The cookie will be the same object on each request... (deep comparison)
+// const jobs = require('./server/jobScheduler') //optional, for sub processes
+
+// jobs.heartbeat() //check if the thing is on, //start schedule otherwise and check again.
+// 
+
+// clientsocket = new clientsocket
+
+
+//start the server once the connection has been confirmed. 
+//it might be okay to start the server synchornously, there's sure to be a few seconds to pass before any objects are directions here...
+
 
 let port = process.env.PORT || localhostPort;
 server.listen(port);

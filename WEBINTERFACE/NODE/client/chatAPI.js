@@ -42,3 +42,6 @@ function disableInput(inputNode, disabled){
 HTMLDivElement.prototype.prependChild = function(htmlNode){
     this.insertBefore(htmlNode, this.children[1])
 }
+
+let clientSocket = new WebSocket(`ws://${location.host}`)
+// clientSocket.on('')

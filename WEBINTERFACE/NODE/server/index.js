@@ -4,6 +4,7 @@ module.exports = props =>
         <link rel="stylesheet" type="text/css" href="./static/style.css">
         <script defer src="./static/chatTemplates.js"></script>
         <script defer src="./static/chatAPI.js"></script>
+        <script defer src="./moment/moment.js"></script>
     </head>
     <body>
         <div id="convo">

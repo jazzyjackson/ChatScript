@@ -73,6 +73,7 @@ app.get('/:botname/brains', (req,res) => {
                         //filter out sub directories.
                         return fs.statSync(path.join(botDirectory, topic_directory, file)).isFile()
                     })
+                    files = files.filter(file => file[0] !== '.') //filter out hidden files whose first character is dot.
                     resolve({dirname: topic_directory.replace(/RAWDATA/,''), files})
                 })
             })
@@ -99,13 +100,7 @@ app.get('/chat', (req,res) => {
     let message = req.query.message
     let {username, botname} = req.cookies
     ChatScript.chat(message, username, botname)
-    .then(botResponse => {res.json(botResponse); return botResponse})
-    .then(jobObj => {
-        if(jobObj.type){
-            // jobs.dispatchTask(jobObj, clientSocket) //clientSocket.send(objUpdate)
-            //if
-        }
-    })
+    .then(botResponse => res.json(botResponse))
     .catch(error => res.status(400).send(error))
 })
 

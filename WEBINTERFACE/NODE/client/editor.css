@@ -1,0 +1,79 @@
+#dirTree {
+    min-width: 195px;
+    height: Calc(100% - 240px); /* 240px is the starting height of the iframe - 10px */
+    float: left;
+    border-right: 2px solid #a3a3a3;
+}
+
+body {
+    margin: 0;
+}
+
+ul {
+    padding-left: 0;
+    padding-right: 0;
+    list-style: none;
+    font-family: sans-serif;
+    font-weight: 100;
+}
+
+li {
+    padding: 3px;
+    padding-left: 25px;
+    cursor: default;
+}
+li.filename {
+  cursor: pointer;
+}
+
+li.filename:not(.active):hover {
+    background: rgba(50,200,250,0.2);
+}
+
+li.active {
+    border: 2px solid #a3a3a3;
+    border-right: none;
+    background: #f7f7f7;
+    margin-right: -2px;
+    margin-left: 6px;
+    padding-left: 16px;
+}
+
+li.edited::before {
+    content: '';
+    width: 8px;
+    display: inline-block;
+    height: 8px;
+    margin-right: 5px;
+    margin-left: -13px; /* width + margin-right, compensate so that the text doesnt become offset*/
+    border-radius: 8px;
+    background: black;
+}
+
+#editorBody {
+    height: Calc(100% - 240px); /* 240px is the starting height of the iframe - 10px */
+}
+
+.CodeMirror {
+    height: 100% !important; /*overwrite CodeMirror.css*/
+}
+
+#chatBody {
+    position: fixed;
+    height: 250px;
+    bottom: 0;
+    width: 100%;
+    z-index: 9;
+}
+#chatResize {
+    width: 100%;
+    height: 10px;
+    position: relative;
+    top: 7px;
+    cursor: ns-resize;
+}
+
+iframe {
+    width: 100%;
+    height: 100%;
+}

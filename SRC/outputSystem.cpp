@@ -1008,7 +1008,7 @@ char* Output(char* ptr,char* buffer,FunctionResult &result,int controls)
                 allow = false;
                 startQuoted = NULL;
             }
-            else if (stricmp(language, "french") &&  (c == ':' || c == ';' || c == '!' || c == '?')) {; }
+            else if (!stricmp(language, "french") &&  (*word == ':' || *word == ';' || *word == '!' || *word == '?')) {; }
 			else if (quoted && *word == '\\' && word[1] == '"') allow = false; // ending quoted
 			// dont space after $  or # or [ or ( or " or / e   USERVAR_PREFIX
 			else if (c == '(' || c == '[' || c == '{'  || c == '$' || c == '#' || c == '/' || c == '`' || c == '\n') allow = false; //erased text is `

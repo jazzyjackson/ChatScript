@@ -4,7 +4,7 @@ by Bruce Wilcox
 
 ---
 
-# Agenda
+# Agenda - What and Who of ChatScript
 
 * Section 0 – Introduction
 
@@ -70,7 +70,7 @@ by Bruce Wilcox
 
 ---
 
-# Agenda
+# Agenda - Overview of Meaning / ChatScript
 
 * Section 0 – Introduction
 
@@ -121,9 +121,10 @@ by Bruce Wilcox
   * _label_ – way for other rules to refer to it
   * _pattern_ – IF test for allowing output to execute
   * _output_ – THEN part for taking action
+```  
+u: MYRULE ( I love meat) So do I.
 ```
-  u: MYRULE ( I love meat) So do I.
-```
+      
 ---
 
 # Kinds of rules
@@ -134,14 +135,16 @@ by Bruce Wilcox
   * `u:` - responds to union of questions and statements
 
 * _Gambits_ – program says when it has sente
-  * t: Have you ever had a pet?
+```
+  t: Have you ever had a pet?
+```
 
 * _Rejoinders_ – based on what we just said to user
 ```
-  a: (yes) What kind of pet?
+a: (yes) What kind of pet?
   b: (dog) I like dogs.
   b: (cat) I prefer dogs.
-  a: (no) Pets are fun. You should try having one.
+a: (no) Pets are fun. You should try having one.
 ```
 
 ---
@@ -176,7 +179,6 @@ by Bruce Wilcox
 ```
 ?: ( << you ~like pizza >>) I love pizza.
 ```
-
   - Can be random text
 ```
 ?: ( << you ~like pizza >>) [Of course][Absolutely] I [love it.][ adore it.]
@@ -184,7 +186,7 @@ by Bruce Wilcox
 
 * Text autoformats
   - Can be code and text intermix or code only
-```
+```  
 ?: ( << what you age >>) I am ^compute(%year – 1989) years old.
 ```
 
@@ -192,7 +194,7 @@ by Bruce Wilcox
 
 ---
 
-# Agenda
+# Agenda - Patterns in depth
 
 * Section 0 – Introduction
 
@@ -209,7 +211,6 @@ by Bruce Wilcox
 
 * Generally done on the current sentence
 * Tokens are instructions to process, left to right.
-
 ```
 #! what is my name
 ?: ( what is my name) - simple pattern
@@ -219,7 +220,6 @@ by Bruce Wilcox
 ```
 u: LETTERS($$phone @_10+ _*1 ) - esoteric pattern
 ```
-
 ---
 
 # Simple Pattern Match
@@ -228,18 +228,13 @@ u: LETTERS($$phone @_10+ _*1 ) - esoteric pattern
 ```
 u: (I love pizza)
 ```
-match:
-<br>_I love pizza_
-<br>_I will love pizza_
+match: _I love pizza_, _I will love pizza_
 
 * Pattern words cased as they should be
 ```
 u: ( I love pizza from Pizza Hut) 
-```
-match:
-<br>_i love pizza from pizza hut_
-<br>_I LOVE PIZZA FROM PIZZA HUT_
-<br>_i LOVE pizza From pizza Hut_
+```        
+match: _i love pizza from pizza hut_, _I LOVE PIZZA FROM PIZZA HUT_, _i LOVE pizza From pizza Hut_
 
 ---
 
@@ -253,24 +248,21 @@ match:
 ```
 I * LOVE * YOU
 ```
-
 ---
 
 # AIML Problem
 
 * Requires match of entire input sentence.
 * Needs 4 patterns to match.
-```
-WORD . WORD
-* WORD ... WORD
-WORD ... WORD *
-* WORD ... WORD *
-```
+
+        WORD . WORD
+        * WORD ... WORD
+        WORD ... WORD *
+        WORD ... WORD *
 
 * 2015 AIML's 1 st revision in 20 years. Provides wildcard matching 0 or more words.
-```
-* WORD ... WORD *
-```
+
+      * WORD ... WORD *
 
 ---
 
@@ -287,10 +279,7 @@ WORD ... WORD *
 ```
 u: (I love pizza) 
 ```
-
-matches
-<br>_I loved pizza_
-<br>_me loves pizzas_
+matches: _I loved pizza_, _me loves pizzas_
 
 ---
 
@@ -305,11 +294,7 @@ u: ( 'I 'love 'pizza)
 ```
 u: ( I loved pizzas)
 ```
-
-match
-
-<br>_me love pizza_
-<br>_me loved pizzas_
+matches: _me love pizza_, _me loved pizzas_
 
 ---
 
@@ -326,30 +311,23 @@ u: ( I love {the my} moon )
 ```
 
 * `<<` `>>` - find all in any order anywhere
+
 ```
 u: ( << pizza I love >> )
 ```
-
 Particularly important. Breaks the straight-jacket of sequence.
 
 ---
 
 # Patterns – composed bags
-
 ```
 u: ( << I [like love adore] [pizza bacon] >>) So do I.
 ```
-<br>_I love bacon_
-<br>_Pizza is what I adore_
-<br>_I hate pizza but love rocks_
-
+matches: _I love bacon_, _Pizza is what I adore_, _I hate pizza but love rocks_
 ```
 u: ( I love [ meat << flesh animal >> ] ) So do I.
 ```
-
-<br>_I love meat_
-<br>_I love animal flesh_
-<br>_I love the flesh of an animal_
+matches: _I love meat_, _I love animal flesh_, _I love the flesh of an animal_
 
 ---
 
@@ -358,24 +336,24 @@ u: ( I love [ meat << flesh animal >> ] ) So do I.
 * Keeping sequence but not requiring contiguity
 
 * `*` - any number of words (including 0)
+
 ```
 u: ( I love * pizza) - matches "I love spicy pepperoni pizza"
 ```
-
 but matches _I love you and hate pizza_ – still a flaw with AIML
 
 * `*1` - 1 word exactly `*2`, `*3` ..
+
 ```
 u: ( I love *1 pizza)
 ```
-
 matches _I love pepperoni pizza_
 
 * `*~1` - 0 or 1 word `*~2`, `*~3` ..
+
 ```
 u: ( I *~2 love *~2 pizza) ?? examples?
 ```
-
 But _I do not love pizza_ is a problem.
 
 ---
@@ -383,11 +361,10 @@ But _I do not love pizza_ is a problem.
 # Patterns - exclusions
 
 `!` - make sure this not seen later in sentence
-```
-u: (!not I *~2 love *~2 pizza)
-u: (!not !pepperoni I *~2 love *~2 pizza)
-u: (![not pepperoni] I *~2 love *~2 pizza)
-```
+
+    u: (!not I *~2 love *~2 pizza)
+    u: (!not !pepperoni I *~2 love *~2 pizza)
+    u: (![not pepperoni] I *~2 love *~2 pizza)
 
 ---
 
@@ -397,12 +374,10 @@ u: (![not pepperoni] I *~2 love *~2 pizza)
 ```
 u: ( I * work * "International Business Machines")
 ```
-
 How is this different from
 ```
 u: (I * work * International Business Machines )
 ```
-
 The phrase is a single idea, an entity. Your pattern should
 reflect that. Humans will understand your pattern better. And CS
 will handle it correctly against a range of tokenization options.
@@ -410,81 +385,77 @@ Particularly if it involves periods and commas
 ```
 u: (I * live * “Raleigh, North Carolina”)
 ```
-
 ---
 
 # Patterns - Concepts
 
 A concept set is a bag of words.
-```
-concept: ~like (like adore love lust "be big on" )
-```
+
+    concept: ~like (like adore love lust "be big on" )
 
 Can be used in patterns in place of words.
 Same canonical rules as patterns, ' or not.
-```
-u: (!~negativeWords << I ~like ~nutrient >>)
-```
+
+    u: (!~negativeWords << I ~like ~nutrient >>)
+
 This rule captures a probable meaning
 _I like some kind of food or drink_
 Can still go wrong. Rules are not perfect.
 
 ---
 
-# Patterns- memorization
+# Patterns - memorization
 `_` - memorize word of input
 Auto assigned match variable numbering.
 
-```
-u: ( I * love * _~nutrient) I love _0 too.
-```
+    u: ( I * love * _~nutrient) I love _0 too.
 
 Stores original, canonical, and position.
-```
-u: ( I * _~like * _~nutrient) I love '_1 too.
-u: ( I like _{~pizzaToppings} pizza)
-```
-<br>_I like pizza_ - `_0` is null
-<br>_I like pepperoni pizza_ - `_0` is pepperoni
+
+    u: ( I * _~like * _~nutrient) I love '_1 too.
+    u: ( I like _{~pizzaToppings} pizza)
+
+_I like pizza_ -> `_0` is null, _I like pepperoni pizza_ -> `_0` is pepperoni
 
 ---
 
 # Patterns - comparisons
 
-* Can test relationships > < == !=
+* Can test relationships `>` `<` `==` `!=`
 ```
-u: ( _~number _0==3) -- relatively pointless since u: (3) is equivalent
+u: ( _~number _0==3) # relatively pointless since u: (3) is equivalent
 u: ( _~number _0>0 _0<10)
-```
+```    
 
-* Can test concept membership ? !?
+* Can test concept membership `?` `!?`
+
 ```
 u: ( _~animals _0?~pets)
 ```
 
-* Can test bit patterns & ^
+* Can test bit patterns `&` `^`
+
 ```
 u: (_~number _0&1)
 ```
 
 * Can test existence (not null)
+
 ```
 u: ( I love _{pepperoni} pizza _0) – but a pointless pattern here
 ```
-
 ---
 
 # Patterns - tag-along patterns
 
 Output requests more matching via `^refine()`.
 Acts like a switch statement, only 1 can match.
-```
-u: ( I ~like _~nutrient) ^refine()
-a: (_0?~dessert) I love brownies.
-a: (_0?~meat) I like steak.
-a: (_0?~beverage) I drink tea.
-a: () All food is good.
-```
+
+    u: ( I ~like _~nutrient) ^refine()
+      a: (_0?~dessert) I love brownies.
+      a: (_0?~meat) I like steak.
+      a: (_0?~beverage) I drink tea.
+      a: () All food is good.
 
 ---
 
@@ -495,24 +466,26 @@ Be aware:
 * You can match forwards and/or backwards
 * You can jump around in the sentence.
 * You can match partial spellings of words.
+
 ```
 u: ( my sign is Sagitt* )
 ```
 
 * You can hide or add concept meanings
+
 ```
 u: ( _coffee ~nutrient) ^unmark(~color _0)
 ```
-_ I like coffee ice cream_ – coffee is not a color
+_I like coffee ice cream_ –> coffee is not a color
 
 * Force alignment to start or end of sentence
+
 ```
 u: ( < ice is nice > ) ice is 1 st word of sentence, nice is last word
 ```
-
 ---
 
-# Agenda
+# Agenda - Topics, Output, Data, Functions
 
 * Section 0 - Introduction
 
@@ -530,13 +503,12 @@ u: ( < ice is nice > ) ice is 1 st word of sentence, nice is last word
 A named collection of rules tried in order
 Can have keywords to find or invoked by name
 Has properties like don't erase, allow repeat
-```
-topic: ~funerals repeat (die death burial funeral)
-?: ( will you ever die ) Not soon I hope
-t: have you ever been to a funeral?
-a: (yes) Did you enjoy it?
-t: I have. It was boring.
-```
+
+    topic: ~funerals repeat (die death burial funeral)
+    ?: ( will you ever die ) Not soon I hope
+    t: have you ever been to a funeral?
+      a: (yes) Did you enjoy it?
+    t: I have. It was boring.
 
 Use relevant keyword (! prepositions/pronouns)
 
@@ -546,10 +518,9 @@ Use relevant keyword (! prepositions/pronouns)
 
 * Match variables from memorization like _0
 * User variables like $var
-```
-$var = _0 - single $ are permanent
-$$tmp = 20 - double $$ last for the volley only
-```
+
+      $var = _0 -> single $ are permanent
+      $$tmp = 20 -> double $$ last for the volley only
 
 * Read-only system variables like %time
 
@@ -568,16 +539,14 @@ Convert on use into simple text Is not autoformatted
 # Data - facts
 
 * A triple of relationship information
-```
-(you age 23)
-("The Wind and the Willows" author "Kenneth Grahame")
-```
+
+      (you age 23)
+      ("The Wind and the Willows" author "Kenneth Grahame")
 
 * Represents internals using MEMBER and IS
-```
-(black member ~colors) - CS representation of a concept
-(Laborador~1 is dog~2) - Wordnet relationship of word meanings
-```
+
+      (black member ~colors) - CS representation of a concept
+      (Laborador~1 is dog~2) - Wordnet relationship of word meanings
 
 * Can query for facts given one or more fields
 
@@ -588,17 +557,15 @@ Convert on use into simple text Is not autoformatted
 * Can define tables of data to process into fact.
 * Processing happens at build time
 * Efficient scripting- all elaborate patterns in common topic
-
 ```
 table: ^favetable(~foods)
-chocolate candy "I love Cadbury's Flake chocolate bar."
-Easter candy "I love marshmallow bunnies."
+chocolate candy    "I love Cadbury's Flake chocolate bar."
+Easter    candy    "I love marshmallow bunnies."
 [salad _] dressing "I prefer sweet dressings to sour ones."
-pizza topping "My favorite pizza topping is pepperoni because I like meat."
-comfort food "My favorite comfort food is is a Gruyere cheese toastie."
-_ pizza "My favorite pizza is pepperoni because I like pizza with meat toppings."
+pizza     topping  "My favorite pizza topping is pepperoni because I like meat."
+comfort   food     "My favorite comfort food is is a Gruyere cheese toastie."
+_         pizza    "My favorite pizza is pepperoni because I like pizza with meat toppings."
 ```
-
 ---
 
 # Data - JSON
@@ -612,6 +579,7 @@ _ pizza "My favorite pizza is pepperoni because I like pizza with meat toppings.
 # Functions
 
 * Classic functions with arguments start with `^`
+
 ```
 $$tmp = ^pick(~animals)
 ```
@@ -624,16 +592,13 @@ $$tmp = ^pick(~animals)
 ^gambit(~topic), ^respond(~topic)
 ^refine(), ^reuse(label)
 ```
-
 ---
 
 # Functions vs Rules vs Topics
 
-* Executes script      Matches patterns
-  Functions Rules      Rules Script (via If)
+* Executes script vs Matches patterns, Functions Rules vs Rules Script (via If)
 
-* Can be called
-  Functions (with args) Rules (0 args)
+* Can be called - Functions (with args) Rules (0 args)
 
 So how are they different? They barely are.
 
@@ -657,7 +622,7 @@ So how are they different? They barely are.
 
 ---
 
-# Agenda
+# Agenda - What is the NL pipeline
 
 * Section 0 – Introduction
 * Section 1 Fundamentals of Scripting
@@ -667,19 +632,19 @@ So how are they different? They barely are.
 
 ---
 
-# NL Pipeline
+# Natural Language (NL) Pipeline
 
 1. Process characters into words/sentences
 
 2. Apply standard transformations
-   - adjust case ( i->I ) British → American
+   - adjust case ( _i_->_I_ )British → American
    - expand contractions texting → American
    - spell correction dialog act conversion
    - remove end punctuation interjection splitting
    - merge dates, numbers, proper nouns
-   - substitutions (FB-> Facebook, 1am → 1 am )
-   - separation (5'11” → 5 foot 11 inch, Bob's → Bob 's)
-   - remove noise (anonymous stranger -> stranger)
+   - substitutions (_FB_ -> _Facebook_, _1am_ → _1 am_)
+   - separation (_5'11”_ → _5 foot 11 inch_, _Bob's_ → _Bob 's_)
+   - remove noise (_anonymous strangerv -> _stranger_)
 
 ---
 
@@ -697,7 +662,7 @@ Now ready to execute script.
 
 ---
 
-# Agenda
+# Agenda - How does the engine work
 
 * Section 0 – Introduction
 * Section 1 Fundamentals of Scripting
@@ -830,8 +795,8 @@ ChatScript manages 2 channels of data
 
 * Application data (OOB) in `[``]` first.
 ```
-[category: vet specialty: cat] Hi, I'm Rosa. →
-→ [callback: 600] My name is Pearl.
+[category: vet specialty: cat] Hi, I'm Rosa.
+[callback: 600] My name is Pearl.
 ```
 
 * Application responsible for handling `[``]` in output
@@ -867,7 +832,7 @@ ChatScript manages 2 channels of data
 
 ---
 
-# `:`Command Support
+# `:` Command Support
 
 * Testing and display- `:trace`, `:testpattern`
 * Proving your code works- `:verify`, `:regress`

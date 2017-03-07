@@ -105,6 +105,7 @@ extern bool planning;
 extern bool nobacktrack;
 FunctionResult MemoryMarkCode(char* buffer);
 FunctionResult MemoryFreeCode(char* buffer);
+unsigned char* GetBotFunctionDefinition(WORDP D, FunctionResult& result, unsigned int& argflags);
 void ResetReuseSafety();
 void InitFunctionSystem(); 
 char* DoFunction(char* name, char* ptr, char* buffer,FunctionResult &result);

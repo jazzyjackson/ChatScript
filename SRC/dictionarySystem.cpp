@@ -64,8 +64,8 @@ but is needed when seeing the dictionary definitions (:word) and if one wants to
 
 #define HASH_EXTRA		2					// +1 for being 1-based and +1 for having uppercase bump
 bool dictionaryBitsChanged = false;
-static unsigned int propertyRedefines = 0;	// property changes on locked dictionary entries
-static unsigned int flagsRedefines = 0;		// systemflags changes on locked dictionary entries
+unsigned int propertyRedefines = 0;	// property changes on locked dictionary entries
+unsigned int flagsRedefines = 0;		// systemflags changes on locked dictionary entries
 static int freeTriedList = 0;
 bool buildDictionary = false;				// indicate when building a dictionary
 char dictionaryTimeStamp[20];		// indicate when dictionary was built
@@ -99,9 +99,7 @@ int topics[MAX_SENTENCE_LENGTH];  // topics chains per word
 bool fullDictionary = true;				// we have a big master dictionary, not a mini dictionary
 bool primaryLookupSucceeded = false;
 
-#ifndef DISCARDDICTIONARYBUILD
 void LoadRawDictionary(int mini);
-#endif
 
 bool TraceHierarchyTest(int x)
 {
@@ -143,7 +141,7 @@ void Add2ConceptTopicList(int list[256], WORDP D,int start,int end,bool unique)
 		}
 	}
 
-	unsigned int* entry = (unsigned int*) AllocateHeap(NULL,2, sizeof(MEANING),false); // ref and link
+	unsigned int* entry = (unsigned int*) AllocateHeap(NULL,2, sizeof(MEANING),false); // ref and link for topics and concepts indexed by word
 	entry[1] = list[start];
 	list[start] = Heap2Index((char*) entry);
 	entry[0] = M;
@@ -568,18 +566,14 @@ void BuildDictionary(char* label)
 	InitDictionary();
 	InitStackHeap();
 	InitCache();
-#ifndef DISCARDDICTIONARYBUILD
 	LoadRawDictionary(miniDict); 
-#endif
 	if (miniDict && miniDict != 6) StoreWord((char*)"minidict"); // mark it as a mini dictionary
 
 	// dictionary has been built now
 	printf((char*)"%s",(char*)"Dumping dictionary\r\n");
 	ClearDictionaryFiles();
 	WalkDictionary(WriteDictionary);
-#ifndef DISCARDDICTIONARYBUILD
 	if (makeBaseList) BuildShortDictionaryBase(); // write out the basic dictionary
-#endif
 
  	remove(UseDictionaryFile((char*)"dict.bin")); // invalidate cache of dictionary, forcing binary rebuild later
     WriteFacts(FopenUTF8Write(UseDictionaryFile((char*)"facts.txt")),factBase); 
@@ -783,6 +777,68 @@ int GetWords(char* word, WORDP* set,bool strictcase)
 	return index;
 }
 
+int UTFCharSize(char* utf)
+{
+	unsigned int count; // bytes of character
+	unsigned char c = (unsigned char)*utf;
+	if (!(c & 0x80)) count = 1; // ordinary ascii char
+	else if ((c & 0xE0)  == 0xC0) count = 2; // 110 0xc0
+	else if ((c & 0Xf0) == 0Xe0)  count = 3; // 1110 0xE0
+	else if ((c & 0Xf8) == 0XF0) count = 4; // 11110 0xF0
+	else count = 1; 
+	return count;
+}
+
+static bool StricmpUTF(char* w1, char* w2,int len)
+{
+	unsigned char c1, c2;
+	unsigned char* word1 = (unsigned char*)w1;
+	unsigned char* word2 = (unsigned char*)w2;
+	while (len && *word1 && *word2)
+	{
+		if (*word1 == 0xc3) // utf8 case sensitive
+		{
+			c1 = *word1;
+			c2 = *word2;
+			if (c1 == c2);
+			else if (c1 >= 0x9f && c1 <= 0xbf) // lower case form
+			{
+				if (c2 >= 0x80 && c2 <= 0x9e) // uppercase form
+				{
+					c1 -= 0x9f;
+					c1 += 0x80;
+				}
+				if (c1 != c2) return true;
+			}
+			else if (c2 >= 0x9f && c2 <= 0xbf) // lower case form
+			{
+				if (c1 >= 0x80 && c1 <= 0x9e) // uppercase form
+				{
+					c2 -= 0x9f;
+					c2 += 0x80;
+				}
+				if (c1 != c2) return true;
+			}
+		}
+		else if (word1[1] >= 0xc4 && word1[1] <= 0xc9)
+		{
+			c1 = *word1;
+			c2 = *word2;
+			if (c1 == c2);
+			else if (c1 & 1 && (c1 & 0xf7) == c2); // lower case form
+			else if (c2 & 1 && (c2 & 0xf7) == c1);
+			else return true;
+		}
+		else if (toLowercaseData[*word1] != toLowercaseData[*word2]) return true;
+		int size = UTFCharSize((char*)word1);
+		word1 += size;
+		word2 += size;
+		len -= size;
+	}
+	if (len == 0) return false; // if matched all characters we needed to, then we are done
+	return *word1 || *word2;
+}
+
 WORDP FindWord(const char* word, int len,uint64 caseAllowed) 
 {
 	if (word == NULL || *word == 0) return NULL;
@@ -816,7 +872,7 @@ WORDP FindWord(const char* word, int len,uint64 caseAllowed)
 		D = dictionaryBase + hash;
 		while (D != dictionaryBase)
 		{
-			if (fullhash == D->hash && D->length == len && !strnicmp(D->word,word,len)) // must use strn because word may be only part of param
+			if (fullhash == D->hash && D->length == len && !StricmpUTF(D->word,(char*)word,len)) // they match independent of case- 
 			{
 				if (caseAllowed == LOWERCASE_LOOKUP) return D; // incoming word MIGHT have uppercase letters but we will be in lower bucket
 				else if (hasUpperCharacters) // we are looking for uppercase or primary case and are in uppercase bucket
@@ -998,7 +1054,11 @@ void WalkDictionary(DICTIONARY_FUNCTION func,uint64 data)
 {
     for (WORDP D = dictionaryBase+1; D < dictionaryFree; ++D) 
 	{
-		if (D->word) (func)(D,data); 
+		// allowed to see concepts and variables
+		if (D->word)
+		{
+			(func)(D, data);
+		}
 	}
 }
 
@@ -1213,8 +1273,10 @@ void CloseDictionary()
 {
 	ClearWordMaps();
 	CloseTextUtilities();
+	free(dictionaryBase);
 	dictionaryBase = NULL;
 	CloseCache(); // actual memory space of the dictionary
+	FreeStackHeap();
 }
 
 static void Write8(unsigned int val, FILE* out)
@@ -1744,9 +1806,11 @@ void WriteDictionary(WORDP D,uint64 data)
 	if (D->internalBits & DELETED_MARK) return;
 	if (*D->word == USERVAR_PREFIX && D->word[1]) return;	// var never and money never, but let $ punctuation through
 	RemoveInternalFlag(D,(unsigned int)(-1 ^ (UTF8|UPPERCASE_HASH|DEFINES)));  // keep only these
+	char word[MAX_WORD_SIZE];
+	MakeLowerCopy(word, D->word);
 
 	// choose appropriate subfile
-	char c = GetLowercaseData(*D->word); 
+	char c = *word; 
 	char name[40];
 	if (IsDigit(c)) sprintf(name,(char*)"%c.txt",c); //   main real dictionary
     else if (!IsLowerCase(c)) sprintf(name,(char*)"%s",(char*)"other.txt"); //   main real dictionary
@@ -2330,7 +2394,13 @@ void ReadSubstitutes(const char* name,unsigned int build,const char* layer, unsi
 		WORDP D = FindWord(original,0, LOWERCASE_LOOKUP);	//   do we know original already?
 		if (D && D->internalBits & HAS_SUBSTITUTE)
 		{
-			if (!compiling) Log(STDTRACELOG,(char*)"Currently have a substitute for %s in %s of file %s\r\n",original,readBuffer,name);
+			if (!compiling)
+			{ // warn if multiple substitutes and we are different
+				WORDP S = D->w.substitutes;
+				if (!S && !*replacement) {}
+				else if (S && stricmp(S->word,replacement)) 
+					Log(ECHOSTDTRACELOG, (char*)"Currently have a substitute for %s in %s of file %s\r\n", original, readBuffer, name);
+			}
 			continue;
 		}
 		D = StoreWord(original,AS_IS); //   original word
@@ -2498,6 +2568,381 @@ void ReadQueryLabels(char* name)
     FClose(in);
 }
 
+static void ReadPosPatterns(char* file)
+{
+	char word[MAX_WORD_SIZE];
+	FILE* in = FopenStaticReadOnly(file); // ENGLISH folder
+	if (!in) return;
+	uint64* dataptr;
+
+	dataptr = dataBuf + (tagRuleCount * MAX_TAG_FIELDS);
+	memset(dataptr, 0, sizeof(uint64) * MAX_TAG_FIELDS);
+	commentsData[tagRuleCount] = AllocateHeap(file); // put in null change of file marker for debugging
+	++tagRuleCount;
+
+	uint64 val;
+	uint64 flags = 0;
+	uint64 v = 0;
+	uint64 offsetValue;
+	char comment[MAX_WORD_SIZE];
+	while (ReadALine(readBuffer, in) >= 0) // read new rule or comments
+	{
+		char* ptr = ReadCompiledWord(readBuffer, word);
+		if (!*word) continue;
+		if (*word == '#')
+		{
+			strcpy(comment, readBuffer);
+			continue;
+		}
+		if (!stricmp(word, (char*)"INVERTWORDS")) // run sentences backwards
+		{
+			reverseWords = true;
+			continue;
+		}
+
+		int c = 0;
+		int offset;
+		bool reverse = false;
+		unsigned int limit = MAX_TAG_FIELDS;
+		bool big = false;
+
+		dataptr = dataBuf + (tagRuleCount * MAX_TAG_FIELDS);
+		uint64* base = dataptr;
+		memset(base, 0, sizeof(uint64) * 8);	// clear all potential rule info for a double rule
+		bool skipped = false;
+		if (!stricmp(word, (char*)"USED")) // either order
+		{
+			base[3] |= USED_BIT;
+			ptr = ReadCompiledWord(ptr, word);
+		}
+		if (!stricmp(word, (char*)"TRACE"))
+		{
+			base[3] |= TRACE_BIT;
+			ptr = ReadCompiledWord(ptr, word);
+		}
+		if (!stricmp(word, (char*)"USED")) // either order
+		{
+			base[3] |= USED_BIT;
+			ptr = ReadCompiledWord(ptr, word);
+		}
+		bool backwards = false;
+
+		if (!stricmp(word, (char*)"reverse"))
+		{
+			reverse = true;
+			backwards = true;
+			ptr = ReadCompiledWord(ptr, word);
+			c = 0;
+			if (!IsDigit(word[0]) && word[0] != '-')
+			{
+				printf((char*)"Missing reverse offset  %s rule: %d comment: %s\r\n", word, tagRuleCount, comment);
+				FClose(in);
+				return;
+			}
+			c = atoi(word);
+			if (c < -3 || c > 3) // 3 bits
+			{
+				printf((char*)"Bad offset (+-3 max)  %s rule: %d comment: %s\r\n", word, tagRuleCount, comment);
+				FClose(in);
+				return;
+			}
+		}
+		else if (!IsDigit(word[0]) && word[0] != '-') continue; // not an offset start of rule
+		else
+		{
+			c = atoi(word);
+			if (c < -3 || c > 3) // 3 bits
+			{
+				printf((char*)"Bad offset (+-3 max)  %s rule: %d comment: %s\r\n", word, tagRuleCount, comment);
+				FClose(in);
+				return;
+			}
+		}
+		offset = (reverse) ? (c + 1) : (c - 1);
+		offsetValue = (uint64)((c + 3) & 0x00000007); // 3 bits offset
+		offsetValue <<= OFFSET_SHIFT;
+		int resultIndex = -1;
+		unsigned int includes = 0;
+		bool doReverse = reverse;
+
+		for (unsigned int i = 1; i <= (limit * 2); ++i)
+		{
+			unsigned int kind = 0;
+			if (reverse)
+			{
+				reverse = false;
+				--offset;
+			}
+			else ++offset;
+			flags = 0;
+		resume:
+			// read control for this field
+			ptr = ReadCompiledWord(ptr, word);
+			if (!*word || *word == '#')
+			{
+				ReadALine(readBuffer, in);
+				ptr = readBuffer;
+				--i;
+				continue;
+			}
+			if (!stricmp(word, (char*)"debug"))  // just a debug label so we can stop here if we want to understand reading a rule
+				goto resume;
+
+			// LAST LINE OF PATTERN
+			if (!stricmp(word, (char*)"KEEP") || !stricmp(word, (char*)"DISCARD") || !stricmp(word, (char*)"DISABLE"))
+			{
+				if (i < 5) while (i++ < 5) dataptr++;  // use up blank fields
+				else if (i > 5 && i < 9) while (i++ < 9) dataptr++;  // use up blank fields
+				ptr = readBuffer;
+				break;
+			}
+
+			if (i == 5) // we are moving into big pattern territory
+			{
+				big = true; // extended pattern
+				*(dataptr - 1) |= PART1_BIT; // mark last field as continuing to 8zone
+			}
+
+			if (!stricmp(word, (char*)"STAY"))
+			{
+				if (doReverse) ++offset;
+				else --offset;
+				kind |= STAY;
+				goto resume;
+			}
+			if (!stricmp(word, (char*)"SKIP")) // cannot do wide negative offset and then SKIP to fill
+			{
+				skipped = true;
+				if (resultIndex == -1)
+				{
+					if (!reverse) printf((char*)"Cannot do SKIP before the primary field -- offsets are unreliable (need to use REVERSE) Rule: %d comment: %s at line %d in %s\r\n", tagRuleCount, comment, currentFileLine, currentFilename);
+					else printf((char*)"Cannot do SKIP before the primary field -- offsets are unreliable Rule: %d comment: %s at line %d in %s\r\n", tagRuleCount, comment, currentFileLine, currentFilename);
+					FClose(in);
+					return;
+				}
+
+				if (doReverse) ++offset;
+				else --offset;
+				kind |= SKIP;
+				goto resume;
+			}
+
+			if (*word == 'x') val = 0; // no field to process
+			else if (*word == '!')
+			{
+				if (!stricmp(word + 1, (char*)"ROLE") || !stricmp(word + 1, (char*)"NEED"))
+				{
+					printf((char*)"Cannot do !ROLE or !NEED Rule: %d comment: %s at line %d in %s\r\n", tagRuleCount, comment, currentFileLine, currentFilename);
+					FClose(in);
+					return;
+				}
+				if (!stricmp(word + 1, (char*)"STAY"))
+				{
+					printf((char*)"Cannot do !STAY (move ! after STAY)  Rule: %d comment: %s at line %d in %s\r\n", tagRuleCount, comment, currentFileLine, currentFilename);
+					FClose(in);
+					return;
+				}
+				val = FindValueByName(word + 1);
+				if (val == 0) val = FindParseValueByName(word + 1);
+				if (val == 0) val = FindMiscValueByName(word + 1);
+				if (val == 0) val = FindSystemValueByName(word + 1);
+				if (val == 0)
+				{
+					printf((char*)"Bad notted control word %s rule: %d comment: %s at line %d in %s\r\n", word, tagRuleCount, comment, currentFileLine, currentFilename);
+					FClose(in);
+					return;
+				}
+
+				if (!stricmp(word + 1, (char*)"include"))
+				{
+					printf((char*)"Use !has instead of !include-  %s rule: %d comment: %s at line %d in %s\r\n", word, tagRuleCount, comment, currentFileLine, currentFilename);
+					FClose(in);
+					return;
+				}
+				kind |= NOTCONTROL;
+				if (!stricmp(word + 1, (char*)"start")) flags = 1;
+				else if (!stricmp(word + 1, (char*)"first")) flags = 1;
+				else if (!stricmp(word + 1, (char*)"end")) flags = 10000;
+				else if (!stricmp(word + 1, (char*)"last")) flags = 10000;
+			}
+			else
+			{
+				val = FindValueByName(word);
+				if (val == 0) val = FindParseValueByName(word);
+				if (val == 0) val = FindMiscValueByName(word);
+				if (val == 0 || val > LASTCONTROL || val > 63)
+				{
+					printf((char*)"Bad control word %s rule: %d comment: %s at line %d in %s\r\n", word, tagRuleCount, comment, currentFileLine, currentFilename);
+					FClose(in);
+					return;
+				}
+				if (!stricmp(word, (char*)"include")) ++includes;
+				if (!stricmp(word, (char*)"start")) flags |= 1;
+				else if (!stricmp(word, (char*)"first")) flags |= 1;
+				else if (!stricmp(word, (char*)"end")) flags |= 10000;
+				else if (!stricmp(word + 1, (char*)"last")) flags = 10000;
+			}
+			flags |= val << OP_SHIFT;	// top byte
+			flags |= ((uint64)kind) << CONTROL_SHIFT;
+			if (i == (MAX_TAG_FIELDS + 1)) flags |= PART2_BIT;	// big marker on 2nd
+			if (flags) // there is something to test
+			{
+				// read flags for this field
+				bool subtract = false;
+				bool once = false;
+				while (ALWAYS)
+				{
+					ptr = ReadCompiledWord(ptr, word);
+					if (!*word || *word == '#') break;	// end of flags
+					uint64 baseval = flags >> OP_SHIFT;
+					if (baseval == ISCANONICAL || baseval == ISORIGINAL || baseval == PRIORCANONICAL || baseval == PRIORORIGINAL || baseval == POSTORIGINAL)
+					{
+						if ((FindValueByName(word) || FindParseValueByName(word)) && stricmp(word, (char*)"not") && !once)
+						{
+							printf((char*)"Did you intend to use HASORIGINAL for %s rule: %d %s at line %d in %s?\r\n", word, tagRuleCount, comment, currentFileLine, currentFilename);
+							once = true;
+						}
+						v = MakeMeaning(StoreWord(word));
+					}
+					else if (IsDigit(word[0])) v = atoi(word); // for POSITION 
+					else if (!stricmp(word, (char*)"reverse")) v = 1;	// for RESETLOCATION
+					else if (!stricmp(word, (char*)"ALL")) v = TAG_TEST;
+					else if (word[0] == '-')
+					{
+						subtract = true;
+						v = 0;
+					}
+					else if (*word == '*')
+					{
+						if (offset != 0)
+						{
+							printf((char*)"INCLUDE * must be centered at 0 rule: %d comment: %s at line %d in %s\r\n", tagRuleCount, comment, currentFileLine, currentFilename);
+							FClose(in);
+							return;
+						}
+						if (resultIndex != -1)
+						{
+							printf((char*)"Already have pattern result bits %s rule: %d comment: %s at line %d in %s\r\n", word, tagRuleCount, comment, currentFileLine, currentFilename);
+							FClose(in);
+							return;
+						}
+						resultIndex = i - 1;
+						v = 0;
+					}
+					else if (baseval == ISMEMBER || baseval == ISORIGINALMEMBER)
+					{
+						WORDP D = FindWord(word);
+						v = MakeMeaning(D);
+						if (!v)
+						{
+							printf((char*)"Failed to find set %s - POS tagger incomplete because build 0 not yet done.\r\n", word);
+						}
+					}
+					else if (baseval == ISQUESTION)
+					{
+						if (!stricmp(word, (char*)"aux")) v = AUXQUESTION;
+						else if (!stricmp(word, (char*)"qword")) v = QWORDQUESTION;
+						else printf((char*)"Bad ISQUESTION %s\r\n", word);
+					}
+					else
+					{
+						v = FindValueByName(word);
+						if (v == 0)
+						{
+							v = FindSystemValueByName(word);
+							if (v == 0) v = FindParseValueByName(word);
+							if (v == 0) v = FindMiscValueByName(word);
+							if (!v)
+							{
+								printf((char*)"Bad flag word %s rule: %d %s at line %d in %s\r\n", word, tagRuleCount, comment, currentFileLine, currentFilename);
+								FClose(in);
+								return;
+							}
+						}
+						else if (v & (NOUN | VERB | ADJECTIVE) && baseval != HASALLPROPERTIES && baseval != HASPROPERTY && baseval != ISPROBABLE)
+						{
+							printf((char*)"Bad flag word overlaps BASIC bits %s rule: %d %s at line %d in %s\r\n", word, tagRuleCount, comment, currentFileLine, currentFilename);
+							FClose(in);
+							return;
+						}
+						if (baseval == PRIORPOS || baseval == POSTPOS)
+						{
+							if (!(kind & STAY)) printf((char*)"PRIORPOS and POSTPOS should use STAY as well - rule: %d %s at line %d in %s\r\n", tagRuleCount, comment, currentFileLine, currentFilename);
+						}
+						if (baseval == IS || baseval == HAS || baseval == HASPROPERTY || baseval == ISPROBABLE || baseval == CANONLYBE || baseval == PARSEMARK || baseval == PRIORPOS || baseval == POSTPOS)
+						{
+							if (v & 0xFFFF000000000000ULL)
+								printf((char*)"Bad  bits overlap control fields %s rule: %d %s at line %d in %s\r\n", word, tagRuleCount, comment, currentFileLine, currentFilename);
+						}
+
+						if (subtract)
+						{
+							flags &= -1 ^ v;
+							v = 0;
+							subtract = false;
+						}
+					}
+					flags |= v;
+				}
+			}
+			if (includes > 1)
+			{
+				printf((char*)"INCLUDE should only be on primary field - use HAS Rule: %d %s at line %d in %s\r\n", tagRuleCount, comment, currentFileLine, currentFilename);
+				FClose(in);
+				return;
+			}
+			if (i == 2) flags |= offsetValue;	// 2nd field gets offset shift
+			*dataptr++ |= flags;
+
+			ReadALine(readBuffer, in);
+			ptr = readBuffer;
+		} // end of fields loop
+
+		  // now get results data
+		ptr = ReadCompiledWord(ptr, word);
+		if (!stricmp(word, (char*)"KEEP") || !stricmp(word, (char*)"DISCARD") || !stricmp(word, (char*)"DISABLE")) { ; }
+		else
+		{
+			printf((char*)"Too many fields before result %s: %d %s\r\n", word, tagRuleCount, comment);
+			FClose(in);
+			return;
+		}
+		if (doReverse) base[2] |= REVERSE_BIT;
+		while (ALWAYS)
+		{
+			if (!stricmp(word, (char*)"DISABLE")) base[1] = ((uint64)HAS) << CONTROL_SHIFT; // 2nd pattern becomes HAS with 0 bits which cannot match
+			else break;
+			ptr = ReadCompiledWord(ptr, word);
+		}
+		if (!stricmp(word, (char*)"KEEP")) base[1] |= KEEP_BIT;
+		else if (!stricmp(word, (char*)"DISCARD")) { ; }
+		else
+		{
+			printf((char*)"Too many fields before result? %s  rule: %d comment: %s  at line %d in %s\r\n", word, tagRuleCount, comment, currentFileLine, currentFilename);
+			FClose(in);
+			return;
+		}
+		if (resultIndex == -1)
+		{
+			printf((char*)"Needs * on result bits %s rule: %d comment: %s\r\n", word, tagRuleCount, comment);
+			FClose(in);
+			return;
+		}
+
+		*base |= ((uint64)resultIndex) << RESULT_SHIFT;
+		if (backwards && !skipped) printf((char*)"Running backwards w/o a skip? Use forwards with minus start. %d %s.   at line %d in %s \r\n", tagRuleCount, comment, currentFileLine, currentFilename);
+
+		commentsData[tagRuleCount] = AllocateHeap(comment);
+		++tagRuleCount;
+		if (big)
+		{
+			commentsData[tagRuleCount] = " ";
+			++tagRuleCount;		// double-size rule
+		}
+	}
+	FClose(in);
+}
+
 void ReadLivePosData()
 {
 	// read pos rules of english langauge
@@ -2506,9 +2951,33 @@ void ReadLivePosData()
 	dataBuf = xdata;
 	commentsData = xcommentsData;
 	tagRuleCount = 0;
+#ifndef DISCARDPARSER
 	char word[MAX_WORD_SIZE];
-	sprintf(word,(char*)"%s/POS",languageFolder);
-	WalkDirectory(word,ReadPosPatterns,0);
+	sprintf(word,(char*)"%s/POS/adjectiverules.txt",languageFolder);
+	ReadPosPatterns(word);
+	sprintf(word, (char*)"%s/POS/adverbrules.txt", languageFolder);
+	ReadPosPatterns(word);
+	sprintf(word, (char*)"%s/POS/auxverbrules.txt", languageFolder);
+	ReadPosPatterns(word);
+	sprintf(word, (char*)"%s/POS/conjunctionrules.txt", languageFolder);
+	ReadPosPatterns(word);
+	sprintf(word, (char*)"%s/POS/determinerrules.txt", languageFolder);
+	ReadPosPatterns(word);
+	sprintf(word, (char*)"%s/POS/interjectionrules.txt", languageFolder);
+	ReadPosPatterns(word);
+	sprintf(word, (char*)"%s/POS/miscposrules.txt", languageFolder);
+	ReadPosPatterns(word);
+	sprintf(word, (char*)"%s/POS/nounrules.txt", languageFolder);
+	ReadPosPatterns(word);
+	sprintf(word, (char*)"%s/POS/particle.txt", languageFolder);
+	ReadPosPatterns(word);
+	sprintf(word, (char*)"%s/POS/prepositionrules.txt", languageFolder);
+	ReadPosPatterns(word);
+	sprintf(word, (char*)"%s/POS/pronounrules.txt", languageFolder);
+	ReadPosPatterns(word);
+	sprintf(word, (char*)"%s/POS/verbrules.txt", languageFolder);
+	ReadPosPatterns(word);
+#endif
 	tags = (uint64*)AllocateHeap((char*) xdata,tagRuleCount * MAX_TAG_FIELDS, sizeof(uint64),false);
 	comments = 0;
 	bool haveComments = true;
@@ -2536,9 +3005,9 @@ void ReadLiveData()
 		ReadSubstitutes((char*)"substitutes.txt",0,NULL,DO_SUBSTITUTES);
 		ReadSubstitutes((char*)"contractions.txt",0,NULL,DO_CONTRACTIONS);
 		ReadSubstitutes((char*)"interjections.txt",0,NULL,DO_INTERJECTIONS);
-		ReadSubstitutes((char*)"british.txt",0,NULL,0,DO_BRITISH);
-		ReadSubstitutes((char*)"spellfix.txt",0,NULL,0,DO_SPELLING);
-		ReadSubstitutes((char*)"texting.txt",0,NULL,0,DO_TEXTING);
+		ReadSubstitutes((char*)"british.txt",0,NULL,DO_BRITISH);
+		ReadSubstitutes((char*)"spellfix.txt",0,NULL,DO_SPELLING);
+		ReadSubstitutes((char*)"texting.txt",0,NULL,DO_TEXTING);
 		ReadSubstitutes((char*)"noise.txt",0,NULL,DO_NOISE);
 		ReadWordsOf((char*)"lowercaseTitles.txt",LOWERCASE_TITLE);
 	}
@@ -3041,7 +3510,7 @@ void DumpDictionaryEntry(char* word,unsigned int limit)
 		bit >>= 1;
 	}
 
-	Log(STDTRACELOG,(char*)"  \r\n  InternalBits: ");
+	Log(STDTRACELOG,(char*)"  \r\n  InternalBits: %x ",D->internalBits);
 #ifndef DISCARDTESTING
 	unsigned int basestamp = inferMark;
 #endif
@@ -3055,7 +3524,9 @@ void DumpDictionaryEntry(char* word,unsigned int limit)
 	}
 #endif
 
-	if (D->internalBits & QUERY_KIND) Log(STDTRACELOG,(char*)"query ");
+	if (D->internalBits & QUERY_KIND) Log(STDTRACELOG, (char*)"query ");
+	if (D->internalBits & UTF8) Log(STDTRACELOG,(char*)"utf8 ");
+	if (D->internalBits & UPPERCASE_HASH) Log(STDTRACELOG, (char*)"uppercase ");
 	if (D->internalBits & FUNCTION_BITS  && D->internalBits & MACRO_TRACE ) Log(STDTRACELOG,(char*)"being-traced ");
 	if (D->internalBits & FUNCTION_BITS  && D->internalBits & MACRO_TIME) Log(STDTRACELOG, (char*)"being-timed ");
 	if (D->internalBits & CONCEPT  && !(D->internalBits & TOPIC)) Log(STDTRACELOG,(char*)"concept ");
@@ -3238,9 +3709,3945 @@ void DumpDictionaryEntry(char* word,unsigned int limit)
 	ReleaseInfiniteStack();
 }
 
-#ifndef DISCARDDICTIONARYBUILD
-#include "../extraSrc/readrawdata.cpp"
+
+#include <map>
+typedef std::map <char*, int> MapType;
+
+static bool foundm;
+static int mstate;
+static char base[MAX_WORD_SIZE];
+static char kind[MAX_WORD_SIZE];
+#define DICTBEGIN 1
+#define MAINFOUND 2
+#define FUNCTIONFOUND 3
+#define SPEECHFOUND 4
+#define GLOSSFOUND 5
+#define BASEFOUND 6
+static bool item = false;
+static bool hasEnglishWord = true;
+static int type;
+static WORDP Dqword;
+static char input_string[INPUT_BUFFER_SIZE];
+static void DefineShortCanonicals(WORDP D, uint64 junk);
+static bool didSomething;
+static void ReadWordFrequency(char* name, unsigned int count, bool until);
+//   http://wordnet.princeton.edu 
+
+#ifdef INFORMATION
+Nouns and verbs are organized into hierarchies based on the hypernymy / hyponymy relation between synsets.Additional pointers are be used to indicate other relations.
+
+Adjectives are arranged in clusters containing head synsets and satellite synsets.Each cluster is organized around antonymous pairs(and occasionally antonymous triplets).The antonymous pairs(or triplets) are indicated in the head synsets of a cluster.Most head synsets have one or more satellite synsets, each of which represents a concept that is similar in meaning to the concept represented by the head synset.One way to think of the adjective cluster organization is to visualize a wheel, with a head synset as the hub and satellite synsets as the spokes.Two or more wheels are logically connected via antonymy, which can be thought of as an axle between the wheels.
+
+Pertainyms are relational adjectives and do not follow the structure just described.Pertainyms do not have antonyms; the synset for a pertainym most often contains only one word or collocation and a lexical pointer to the noun that the adjective is "pertaining to".Participial adjectives have lexical pointers to the verbs that they are derived from.
+
+Adverbs are often derived from adjectives, and sometimes have antonyms; therefore the synset for an adverb usually contains a lexical pointer to the adjective from which it is derived.
+
 #endif
+
+WORDP Ddebug = NULL;
+static void readMassNouns(char* file);
+
+static WORDP FindCircularEntry(WORDP base, uint64 propertyBit)
+{
+	if (!base) return NULL;
+	WORDP at = GetPlural(base);
+	if (!at) return NULL;
+	while (at != base)
+	{
+		if (at->properties & propertyBit) return at;
+		at = GetPlural(at);
+		if (!at) return NULL;		// BUG if happens
+	}
+	return NULL;	//   not found
+}
+
+static void FixSynsets(WORDP D, uint64 data)
+{	// revise synset header data
+	if (!(D->internalBits & WORDNET_ID)) return;
+	// check original masters back to their switchover
+	if (!GetMeaningCount(D)) // useless synset
+	{
+		AddInternalFlag(D, DELETED_MARK);
+		return;
+	}
+	//   now decide on the master referent--- it will be the most common name, longest of those
+	MEANING name = 0;
+	int64 bestage = -1;
+	int64 best = -1;
+	for (int k = 1; k <= GetMeaningCount(D); ++k)
+	{
+		MEANING M = GetMeaning(D, k);
+		M |= (unsigned int)(D->properties & BASIC_POS);
+		GetMeaning(D, k) = M;		// type flagged for consistency
+		WORDP m = Meaning2Word(M);
+		int64 age = m->systemFlags & AGE_LEARNED;
+		if (age > bestage || (age == bestage && m->length > Meaning2Word(name)->length)) //   is this more common or longer?
+		{
+			bestage = age;
+			name = M;
+			best = k;
+		}
+	}
+	if (best != -1)
+	{
+		GetMeaning(D, best) = GetMeaning(D, 1);
+		GetMeaning(D, 1) = name;
+		WORDP X = Meaning2Word(name);
+		int xx = 0;
+	}
+}
+
+static void ExtractSynsets(WORDP D, uint64 data) // now rearrange to get synsets inline
+{
+	if (!(D->internalBits & WORDNET_ID)) return;
+
+	if (!D->meanings)
+	{
+		AddInternalFlag(D, DELETED_MARK);
+		FACT* F = GetSubjectHead(D);	// all facts he is head of
+		while (F)
+		{
+			KillFact(F);
+			F = GetSubjectNext(F);
+		}
+		return;
+	}
+
+	MEANING master = GetMeaning(D, 1) & SIMPLEMEANING;	// this is the master normal word of this synset, who currently points to us. 
+	WORDP E = Meaning2Word(master);
+	unsigned int index = Meaning2Index(master);
+
+	MEANING synset = GetMeaning(E, index); // he points to synset	which should be us
+	WORDP syn = Meaning2Word(synset);
+	unsigned int count = GetMeaningCount(E);
+	if (count < index || syn != D) // he doesnt point back to us!
+	{
+		ReportBug("Bad extract master")
+			myexit(0);
+	}
+	MEANING oldmeaning = 0;
+
+	// convert pointers from (words->synsets)  to  circular word list with marker on head when you are at it.
+	for (int k = 1; k <= GetMeaningCount(D); ++k)  // each meaning of the synset
+	{
+		MEANING M = GetMeaning(D, k); // ptr from synset to actual word
+		WORDP referent = Meaning2Word(M); // actual dictionary word
+		unsigned int offset = Meaning2Index(M);
+		if (GetMeaning(referent, offset) != synset) // prove points to synset head
+		{
+			ReportBug("bad extract master2 synset: %s index: %d word %s index %d  synset checked against %s %d but was %s %d\r\n", D->word, k, referent->word, offset, Meaning2Word(synset)->word, Meaning2Index(synset),
+				Meaning2Word(GetMeaning(referent, offset))->word, Meaning2Index(GetMeaning(referent, offset)));
+			myexit(0);
+		}
+		GetMeaning(referent, offset) = oldmeaning; // change his synset ptr to be our new master
+		oldmeaning = M;
+	}
+	GetMeaning(E, index) = oldmeaning | SYNSET_MARKER; // circular loop complete and stamp
+	if (D->w.glosses)
+	{
+		char* gloss = Index2Heap(D->w.glosses[1] & 0x00ffffff);
+		AddGloss(E, gloss, index);
+	}
+	// now adjust his facts...(synsets only have is facts between synsets)
+	FACT* F = GetSubjectHead(D);	// all facts he is head of
+	while (F)
+	{
+		if (F->flags & (FACTSUBJECT | FACTVERB | FACTOBJECT))
+		{
+			ReportBug("bad fact on synset")
+				myexit(0);
+		}
+		if (F->verb == Mis);
+		else
+		{
+			ReportBug("unknonw synset fact")
+				myexit(0);
+		}
+		MEANING object = F->object;		// originally a synset id
+		WORDP o = Meaning2Word(object);
+		if (!(o->internalBits & WORDNET_ID))
+		{
+			ReportBug("failed link")
+				myexit(0);
+		}
+		if (o->meanings) // if it has meaning now. - if not, hasnt been converted yet
+		{
+			object = GetMeaning(o, 1) & SIMPLEMEANING;	// this synsets main link
+			WORDP x = Meaning2Word(object); // debug only
+			FACT* G = CreateFact(master, Mis, object);
+		}
+		else
+		{
+			int x = 0;
+		}
+		KillFact(F);
+		F = GetSubjectNext(F);
+	}
+
+	AddInternalFlag(D, DELETED_MARK); // we are done with this synset, kill it
+}
+
+static void PurgeDictionary(WORDP D, uint64 data)
+{ // meanings are currently to self or to synset headers.  we will add links from headers back to us
+	if (D->internalBits & WORDNET_ID)  return;
+	if (*D->word == '_' && D->internalBits & RENAMED) return;	// is rename _xxx
+	unsigned int remapIndex = GetMeaningCount(D);
+	if (!D->properties && !remapIndex && !GetSubstitute(D) && D->word[0] != '~' && !(D->systemFlags & CONDITIONAL_IDIOM)) // useless word
+	{
+		AddInternalFlag(D, DELETED_MARK); //   not interesting data
+										  // remove its facts
+		FACT* F = GetSubjectHead(D);
+		while (F)
+		{
+			KillFact(F);
+			F = GetSubjectNext(F);
+		}
+		F = GetVerbHead(D);
+		while (F)
+		{
+			KillFact(F);
+			F = GetVerbNext(F);
+		}
+		F = GetObjectHead(D);
+		while (F)
+		{
+			KillFact(F);
+			F = GetObjectNext(F);
+		}
+
+		return;
+	}
+
+	// word had meanings, does it still or have they been deleted
+	unsigned int remap[1000];
+	unsigned int meaningCount = remapIndex;
+	for (unsigned int j = 1; j <= meaningCount; ++j)
+	{
+		MEANING M = GetMeaning(D, j);
+		remap[j] = M; // what WAS the value before we delete anything
+		if (M && Meaning2Word(M) == D)
+		{
+			unsigned int index = Meaning2Index(M);
+			if (index != j)
+			{
+				ReportBug("Self ptr not pointing to own index\r\n");
+			}
+		}
+	}
+
+	//   now verify meanings not deleted. if are then delete
+	for (unsigned int i = 1; i <= meaningCount; ++i)
+	{
+		MEANING M = GetMeaning(D, i);
+		WORDP X = Meaning2Word(M);
+		if (M && !(Meaning2Word(M)->internalBits & WORDNET_ID) && Meaning2Word(M) != D) //invalid link
+		{
+			ReportBug("bad xlink %s %s", D->word, Meaning2Word(M)->word)
+				GetMeaning(D, i) = 0;
+			M = 0;
+		}
+		if (!M) // was deleted 
+		{
+			remap[i] = 0; // deleting this
+			for (unsigned int j = i + 1; j <= remapIndex; ++j)
+			{
+				if (Meaning2Word(remap[j]) == D) remap[j] -= INDEX_MINUS; // renumber later self-ptr  to what they will actually be index-wise 
+			}
+
+			// now remove facts involving this index
+			FACT* F = GetSubjectHead(D);
+			while (F)
+			{
+				unsigned int index = Meaning2Index(F->subject);
+				if (index == i)  KillFact(F);
+				F = GetSubjectNext(F);
+			}
+			F = GetVerbHead(D);
+			while (F)
+			{
+				unsigned int index = Meaning2Index(F->verb);
+				if (index == i) KillFact(F);
+				F = GetVerbNext(F);
+			}
+			F = GetObjectHead(D);
+			while (F)
+			{
+				unsigned int index = Meaning2Index(F->object);
+				if (index == i)  KillFact(F);
+				F = GetObjectNext(F);
+			}
+		}
+	}
+
+	// alter facts of still living definitions
+	for (unsigned int j = 1; j <= remapIndex; ++j)
+	{
+		MEANING newMeaning = remap[j]; // a self ptr to the NEW slot of self
+		if (newMeaning == GetMeaning(D, j) || !newMeaning) continue;	 // unchanged or already killed off
+		GetMeaning(D, j) = newMeaning;
+
+		// update facts pointing to the OLD self to new self ptr
+		FACT* F = GetSubjectHead(D);
+		while (F)
+		{
+			unsigned int index = Meaning2Index(F->subject);
+			if (index == j)  F->subject = newMeaning;
+			F = GetSubjectNext(F);
+		}
+		F = GetVerbHead(D);
+		while (F)
+		{
+			unsigned int index = Meaning2Index(F->verb);
+			if (index == j) F->verb = newMeaning;
+			F = GetVerbNext(F);
+		}
+		F = GetObjectHead(D);
+		while (F)
+		{
+			unsigned int index = Meaning2Index(F->object);
+			if (index == j)  F->object = newMeaning;
+			F = GetObjectNext(F);
+		}
+	}
+	// set up backlinks from synset head
+	for (int i = 1; i <= GetMeaningCount(D); ++i)
+	{
+		MEANING M = GetMeaning(D, i);
+		WORDP master = Meaning2Word(M);
+
+		if (!master) // remove defunct meaning
+		{
+			memmove(&GetMeaning(D, i), &GetMeaning(D, i + 1), sizeof(MEANING) * (GetMeaningCount(D) - i));
+			--GetMeaning(D, 0);
+			--i;
+		}
+		else if (master != D) AddMeaning(master, MakeMeaning(D, i) | (M & TYPE_RESTRICTION)); // we now link synset head back to word
+																							  // else was self ptr or deleted, no real synset
+	}
+}
+
+static void RemoveComments(char* at)
+{
+	int paren = 0;
+	--at;
+	while (*++at)    //   scan to end or comment marker (will not occur in a pattern area)
+	{
+		if (*at == '#' && !paren) break;
+		else if (*at == '(') ++paren;
+		else if (*at == ')') --paren;
+	}
+	*at = 0;               //   ERASE comment if any
+}
+
+static void RemoveTrailingWhite(char* ptr)
+{
+	//   remove trailing line separator and blanks
+	size_t len = strlen(ptr);
+	char* at = ptr + len - 1;      //   trim off trailing blanks
+	while (at > ptr && *at == ' ') --at;
+	at[1] = 0;              //   erase any trailing blanks
+}
+
+static int fget_input_string(bool cpp, bool postprocess, char *input_string, FILE *in)
+{
+	while (ReadALine(input_string, in) >= 0) //   used when reading a file
+	{
+		//   erase trailing \r\n
+		if (!cpp && *input_string == '#') continue; //    DO NOT treat # as comment when reading the modifers.h C++ file
+		if (postprocess) RemoveComments(input_string);
+		RemoveTrailingWhite(input_string);
+		return 1;
+	}
+	return 0;
+}
+
+static void AddQuestionAdverbs()
+{
+	WORDP D = StoreWord("whom", QWORD, KINDERGARTEN);
+	CreateFact(MakeMeaning(D), Mmember, MakeMeaning(Dqword));
+	D = StoreWord("who", QWORD, KINDERGARTEN);  // wh_pronoun  also whether
+	CreateFact(MakeMeaning(D), Mmember, MakeMeaning(Dqword));
+	D = StoreWord("whose", QWORD, KINDERGARTEN);
+	CreateFact(MakeMeaning(D), Mmember, MakeMeaning(Dqword));
+	D = StoreWord("whomever", QWORD, KINDERGARTEN);
+	CreateFact(MakeMeaning(D), Mmember, MakeMeaning(Dqword));
+	D = StoreWord("whoever", QWORD, KINDERGARTEN);
+	CreateFact(MakeMeaning(D), Mmember, MakeMeaning(Dqword));
+	D = StoreWord("what", QWORD, KINDERGARTEN);  // determiner also   wh_determiner
+	CreateFact(MakeMeaning(D), Mmember, MakeMeaning(Dqword));
+	D = StoreWord("which", QWORD, KINDERGARTEN);   // determiner also
+	CreateFact(MakeMeaning(D), Mmember, MakeMeaning(Dqword));
+	D = StoreWord("whichever", QWORD, KINDERGARTEN);
+	CreateFact(MakeMeaning(D), Mmember, MakeMeaning(Dqword));
+	D = StoreWord("whatever", QWORD, KINDERGARTEN);
+	CreateFact(MakeMeaning(D), Mmember, MakeMeaning(Dqword));
+
+	D = StoreWord("where", ADVERB | ADVERB | QWORD | CONJUNCTION_SUBORDINATE, KINDERGARTEN);
+	CreateFact(MakeMeaning(D), Mmember, MakeMeaning(Dqword));
+	D = StoreWord("when", ADVERB | ADVERB | QWORD | CONJUNCTION_SUBORDINATE, KINDERGARTEN);
+	CreateFact(MakeMeaning(D), Mmember, MakeMeaning(Dqword));
+	D = StoreWord("why", ADVERB | ADVERB | QWORD | CONJUNCTION_SUBORDINATE, KINDERGARTEN);
+	CreateFact(MakeMeaning(D), Mmember, MakeMeaning(Dqword));
+	D = StoreWord("how", ADVERB | ADVERB | QWORD | CONJUNCTION_SUBORDINATE, KINDERGARTEN);
+	CreateFact(MakeMeaning(D), Mmember, MakeMeaning(Dqword));
+
+	D = StoreWord("whence", ADVERB | ADVERB | QWORD | CONJUNCTION_SUBORDINATE, KINDERGARTEN);
+	CreateFact(MakeMeaning(D), Mmember, MakeMeaning(Dqword));
+	D = StoreWord("whereby", ADVERB | ADVERB | QWORD | CONJUNCTION_SUBORDINATE, KINDERGARTEN);
+	CreateFact(MakeMeaning(D), Mmember, MakeMeaning(Dqword));
+	D = StoreWord("whereein", ADVERB | ADVERB | QWORD | CONJUNCTION_SUBORDINATE, KINDERGARTEN);
+	CreateFact(MakeMeaning(D), Mmember, MakeMeaning(Dqword));
+	D = StoreWord("whereupon", ADVERB | ADVERB | QWORD | CONJUNCTION_SUBORDINATE, KINDERGARTEN);
+	CreateFact(MakeMeaning(D), Mmember, MakeMeaning(Dqword));
+
+	D = StoreWord("however", ADVERB | QWORD | ADVERB | CONJUNCTION_SUBORDINATE, KINDERGARTEN);
+	CreateFact(MakeMeaning(D), Mmember, MakeMeaning(Dqword));
+
+	D = StoreWord("whenever", ADVERB | ADVERB | QWORD | CONJUNCTION_SUBORDINATE, KINDERGARTEN);
+	CreateFact(MakeMeaning(D), Mmember, MakeMeaning(Dqword));
+	D = StoreWord("whereever", ADVERB | QWORD | ADVERB | CONJUNCTION_SUBORDINATE, KINDERGARTEN);
+	CreateFact(MakeMeaning(D), Mmember, MakeMeaning(Dqword));
+
+	D = StoreWord("whereeof", CONJUNCTION_SUBORDINATE, KINDERGARTEN);
+	CreateFact(MakeMeaning(D), Mmember, MakeMeaning(Dqword));
+	D = StoreWord("whether", CONJUNCTION_SUBORDINATE, KINDERGARTEN);
+	CreateFact(MakeMeaning(D), Mmember, MakeMeaning(Dqword));
+	D = StoreWord("whither", CONJUNCTION_SUBORDINATE, KINDERGARTEN);
+	CreateFact(MakeMeaning(D), Mmember, MakeMeaning(Dqword));
+}
+
+static char* ReadWord(char* ptr, char* spot) //   mass of  non-whitespace
+{
+	ptr = SkipWhitespace(ptr);
+	char* original = spot;
+	*spot = 0;
+	if (!ptr || !*ptr) return NULL;
+
+	if (*ptr == '"' || (*ptr == '\\' && ptr[1] == '"'))  //   grab whole string -- but if space follows quote, check if its like 17" 
+	{
+		char* beginptr = ptr;
+		ptr = ReadQuote(ptr, spot);
+		if (ptr != beginptr) return ptr;
+	}
+
+	char c;
+	while ((c = *ptr++) && !IsWhiteSpace(c) && c != '`')  *spot++ = c;  //   ways of ending the string
+	*spot = 0;
+	if (original[0] == '"' && original[1] == '"' && original[2] == 0) *original = 0;
+	if (*ptr == ENDUNIT) ReportBug("funny separator shouldnt be found")
+		return ptr;
+}
+
+bool IgnoreEntry(char* word)
+{
+	if (!strnicmp(word, "atomic_number_", 14) && IsDigit(word[14])) return true;
+	if (!strnicmp(word, "element_", 8) && IsDigit(word[8])) return true;
+	if (!strnicmp(word, "capital_of", 10)) return true;
+	if (!strnicmp(word, "family_", 7))
+	{
+		size_t len = strlen(word);
+		if (word[len - 1] == 'e' && word[len - 2] == 'a') return true;	//   family_xxxae  latin name
+	}
+	return false;
+}
+
+static void readIndex(char* file, uint64 prior)
+{// has the ORDER of most likely meaning that needs to change the meanings list of a word
+	char word[MAX_WORD_SIZE];
+	FILE* in = FopenReadNormal(file);
+	if (!in) Log(STDUSERLOG, "** Missing file %s\r\n", file);
+	currentFileLine = 0;
+	int synsetCount;
+	char pos[50];
+	int junk;
+	while (ReadALine(readBuffer, in) >= 0)
+	{
+		if (readBuffer[0] == ' ' || readBuffer[0] == 0) continue;
+		char* ptr = ReadWord(readBuffer, word); //   get lowercase version of the word
+		strcpy(word, JoinWords(BurstWord(word, CONTRACTIONS), false)); // our formatting
+		if (IgnoreEntry(word)) continue;
+		ptr = ReadWord(ptr, pos); //  pos type (n,v,a,r)
+		if (*pos == 'a')  *pos = 'j';
+		else if (*pos == 'r')  *pos = 'b';
+
+		// NOTE-- index words are all in lower case, even though the actual word might be upper case
+
+		WORDP D = FindWord(word);
+		if (!D)
+			continue; // HUH??
+
+		ptr = SkipWhitespace(ptr);
+		ptr = ReadInt(ptr, synsetCount); //  number of synsets it particates in, IN ORDER
+		ptr = SkipWhitespace(ptr);
+		ptr = ReadInt(ptr, junk); //  ptr count
+		for (int i = 0; i < junk; ++i)
+		{
+			ptr = SkipWhitespace(ptr);
+			ptr = ReadWord(ptr, word); // skip ptr tpe
+		}
+		ptr = SkipWhitespace(ptr);
+		ptr = ReadInt(ptr, junk); //  ignore sense_cnt
+		ptr = SkipWhitespace(ptr);
+		ptr = ReadInt(ptr, junk); //  ignore tagsense_cnt
+		if (synsetCount >= 63) synsetCount = 63;//   refuse to go beyond this
+		int actual = 1; // the actual slot to put it in, increases monotonically while "i" may miss because not found
+		while (actual < GetMeaningCount(D)) // skip previously sorted word pos types
+		{
+			if (Meaning2Word(GetMeaning(D, actual))->properties & prior)
+			{
+				++actual;
+			}
+			else break;
+		}
+		int i;
+		for (i = 0; i < synsetCount; ++i)
+		{
+			ptr = ReadWord(ptr, word); // skip ptr tpe
+			strcat(word, pos);  // name of synset...
+			WORDP master = FindWord(word);
+			if (!master)
+				continue; // huh?
+			MEANING masterMeaning = MakeMeaning(master);
+			for (int j = 1; j <= GetMeaningCount(D); ++j)
+			{
+				if (GetMeaning(D, j) == masterMeaning) // found it on the lower case word - if we dont find it, it will be on upper case, and we dont CARE about order there.
+				{
+					if (j != actual) // occurs later or earlier, must move it here by swap
+					{
+						MEANING M = GetMeaning(D, actual);
+						GetMeaning(D, actual) = masterMeaning;
+						GetMeaning(D, j) = M;
+					}
+					++actual;
+					break;
+				}
+			}
+		}
+	}
+	fclose(in);
+}
+
+static void readData(char* file)
+{
+	char word[MAX_WORD_SIZE];
+	uint64 synsetCount;
+	int ptrCount;
+	FILE* in = FopenReadNormal(file);
+	if (!in) Log(STDUSERLOG, "** Missing file %s\r\n", file);
+	currentFileLine = 0;
+	MEANING meanings[1000];
+	unsigned int meaningIndex;
+	while (ReadALine(readBuffer, in) >= 0)
+	{
+		if (readBuffer[0] == ' ' || readBuffer[0] == 0) continue;
+		//lemma pos synset_cnt p_cnt [ptr_symbol...] sense_cnt tagsense_cnt synset_offset [synset_offset...] 
+		//   looks like this: 01302724 05 n 01 pet 0 001 @ 00015024 n 0000 | a domesticated animal kept for companionship or amusement  
+		//   which means: id 01302724 from lexfile 5 is type n (noun) and has 1 word in synset
+		//   1st word is "pet" lexid 
+		//   there are 1 links to other synsets. the @ LINK TO 00015024 type noun
+		//   EACH link is: pointer_symbol synset_offset pos source/target
+		//   there are 0 frames (only verbs have frames)
+		//   The gloss is after | 
+		char* ptr = readBuffer;
+		meaningIndex = 0;
+		char id[MAX_WORD_SIZE];
+		char junk[MAX_WORD_SIZE];
+		char pos[MAX_WORD_SIZE];
+		ptr = ReadWord(ptr, id); //   this is the offsetid for this word
+		if (!*id) break;
+
+		int lexnoun = 0;
+		int lexverb = 0;
+		ptr = SkipWhitespace(ptr);
+		ptr = ReadInt(ptr, lexnoun); //   the lexfile it comes from
+		unsigned int lex = lexnoun;
+		lexnoun = 1 << lexnoun; //   bit representation
+		if (lex > 28) //   28 is lextime value from wordnet //   beyond nouns, into verbs
+		{
+			lexverb = 1 << (lex - 28);
+			lexnoun = 0;
+		}
+#ifdef INFORMATION
+		troponym  more precise form of a general verb
+			Lexname names the lexographer files :
+		00  adj.all  all adjective clusters
+			01  adj.pert  relational adjectives(pertainyms) related to or pertaining to
+			02  adv.all  all adverbs
+			44  adj.ppl  participial adjectives
+#endif
+			ptr = ReadWord(ptr, pos); //   get pos type
+		uint64 flags = 0;
+		uint64 sysflags = 0;
+		if (pos[0] == 'n')
+		{
+			flags = NOUN;
+			strcat(id, "n");
+		}
+		else if (pos[0] == 'v')
+		{
+			flags = VERB | VERB_INFINITIVE | VERB_PRESENT;
+			strcat(id, "v");
+		}
+		else if (pos[0] == 'a' || pos[0] == 's')
+		{
+			flags = ADJECTIVE | ADJECTIVE_NORMAL;
+			sysflags = 0;
+			strcat(id, "j");
+		}
+		else if (pos[0] == 'r')
+		{
+			flags = ADVERB;
+			sysflags = 0;
+			strcat(id, "b");
+		}
+		WORDP master = StoreWord(id, flags, sysflags);
+		master->internalBits |= WORDNET_ID;
+		MEANING masterMeaning = MakeMeaning(master, 0) | (unsigned int)(flags & BASIC_POS); // synset head ptr
+		ptr = SkipWhitespace(ptr);
+		ptr = ReadHex(ptr, synsetCount); //   number of words in the synset
+		uint64 oldflags = flags;
+		while (synsetCount-- > 0) //   dictionary items participating in this synset 
+		{
+			flags = oldflags;
+
+			bool upcase = false;
+			bool downcase = false;
+			ptr = ReadCompiledWord(ptr, word); //   the id
+
+			strcpy(word, JoinWords(BurstWord(word, CONTRACTIONS)));
+			//   ADJECTIVE may have (xx) after it indicating restrictions:
+			//(p)    predicate position 
+			//(a)    prenominal (attributive) position 
+			//(ip)   immediately postnominal position 
+			char* px = strchr(word, '(');
+			char restrict = 0;
+			if (px)
+			{
+				restrict = px[1];
+				*px = 0;	// remove restriction "word(p)"
+			}
+			else if (*ptr == '(')
+			{
+				restrict = ptr[1];
+				while (*ptr++ != ')'); //remove restriction
+			}
+			size_t len = strlen(word);
+			for (unsigned int k = 0; k < len; ++k) //   check casing of word
+			{
+				if (IsUpperCase(word[k])) upcase = true;
+				if (IsLowerCase(word[k])) downcase = true;
+			}
+			ptr = ReadWord(ptr, junk); //   skip lexid
+									   //   adjust wordnet composite word entries that dont match our tokenization, like cat's_eye should be cat_'s_eye
+			if (IgnoreEntry(word)) continue;
+
+			int n = BurstWord(word);
+			strcpy(word, JoinWords(n, false));
+			char original[MAX_WORD_SIZE];
+			strcpy(original, word);
+
+			if (upcase && flags & NOUN) //   prove this is a proper name, not something like TV_show
+			{ //Not enough to start with upper. van_Eyck is proper, for instance.
+				char* start = original;
+				char* ptr = original;
+				bool good = true;
+				while (ALWAYS)
+				{
+					if (*++ptr == 0 || *ptr == '_') //   end of a chunk
+					{
+						WORDP W = FindWord(start, ptr - start, PRIMARY_CASE_ALLOWED);
+						if (W && !(W->properties & (DETERMINER | PREPOSITION | CONJUNCTION))) //   word needs to be capped if title
+						{
+							if (IsLowerCase(*start)) //   lower case word makes this an unlikely proper name
+							{
+								good = false;
+								break;
+							}
+						}
+
+						if (*ptr == 0) break;
+						start = ptr + 1;
+					}
+				}
+			}
+			bool place = IsPlaceNumber(word);
+			// leave word numbers like "score" alone
+			if (IsNumber(word) && !place && IsDigit(word[0])) continue; // dont bother with number adjective or adverb definitions?
+			if (place && flags & (NOUN | ADJECTIVE)) continue; //dont do place numbers in dictionary
+			if (!strcmp(word, "MArch")) strcpy(word, "March"); // patch master of arch which comes first
+			WORDP D = StoreWord(word, flags, sysflags);
+			if (flags & ADJECTIVE)
+			{
+				if (restrict == 'p') AddSystemFlag(D, ADJECTIVE_ONLY_PREDICATE); // predicate  he was *afraid
+				if (restrict == 'a') AddSystemFlag(D, ADJECTIVE_NOT_PREDICATE); // attributive "the *lonely boy"
+				if (restrict == 'i') AddSystemFlag(D, ADJECTIVE_POSTPOSITIVE); // postnominal "we have rooms *available"
+			}
+			else if (flags & ADVERB)
+			{
+			}
+			else if (flags & NOUN)
+			{
+				AddProperty(D, (D->internalBits & UPPERCASE_HASH) ? NOUN_PROPER_SINGULAR : NOUN_SINGULAR);
+			}
+			else if (flags & VERB)
+			{
+			}
+			if (meaningIndex < 63 && GetMeaningCount(D) <= 63)
+			{
+				if (AddMeaning(D, masterMeaning)) // they point to each other, unless overflow
+				{
+					meanings[meaningIndex++] = MakeMeaning(D, GetMeaningCount(D)) | (flags & BASIC_POS); // most recent meaning reference
+				}
+			}
+		}
+		if (meaningIndex == 0) //   no meanings?  
+		{
+			AddInternalFlag(master, DELETED_MARK);
+			continue;
+		}
+
+		//   now link up rest of synset members to master (they are all unaware of the other members)
+		//   transfer key top properties down
+
+		//   for each slave, they point to this synset header node as a meaning and he points to them (though synset might pt to an upper and a lower case form of the same word)
+		unsigned int count = 0;
+		//   coming out of above, master is the MEANING used for this synset id
+
+		ptr = ReadInt(ptr, ptrCount); //   number of  relational pointers
+		while (ptrCount-- > 0) //   read index marker quad
+		{ //   ptrtype synsetoffset pos  source/target
+			char ptrtype[MAX_WORD_SIZE];
+			ptr = ReadWord(ptr, ptrtype);
+			if (*ptrtype == '|')
+			{
+				Log(STDUSERLOG, "ran into defn\r\n");
+				ptr -= 2;
+				break;
+			}
+			char refsyn[MAX_WORD_SIZE];
+			ptr = ReadWord(ptr, refsyn); //   the other synset
+			ptr = ReadWord(ptr, pos);   //   the pos type
+			if (*ptrtype == '|')
+			{
+				Log(STDUSERLOG, "ran into defn\r\n");
+				ptr -= 2;
+				break;
+			}
+			uint64 source, target;
+			ptr = SkipWhitespace(ptr);
+			char c = ptr[2];
+			ptr[2] = 0;
+			ReadHex(ptr, source); //   which word of ours (0 = all)
+			ptr[2] = c;
+			ptr = ReadHex(ptr + 2, target); //   which word of his (0 = all)
+			uint64 kind = 0;
+			if (*pos == 'n')
+			{
+				strcat(refsyn, "n");
+				kind = NOUN;
+			}
+			else if (*pos == 'v')
+			{
+				strcat(refsyn, "v");
+				kind = VERB;
+			}
+			else if (*pos == 'a' || *pos == 's')
+			{
+				strcat(refsyn, "j");
+				kind = ADJECTIVE;
+			}
+			else if (*pos == 'r')
+			{
+				strcat(refsyn, "b");
+				kind = ADVERB;
+			}
+			MEANING masterid = MakeMeaning(master, (int)source);
+			WORDP referd = StoreWord(refsyn, kind);
+			referd->internalBits |= WORDNET_ID;
+			MEANING referMeaning = MakeMeaning(referd, (int)target);
+
+			//   ALL FACTS IN ONTOLOGY are hooked from HEADS of synsets only
+			char referName[MAX_WORD_SIZE]; //   things in the list of relations to the entry item
+			referName[0] = 0;
+			strcpy(referName, WriteMeaning(referMeaning));
+			char TName[MAX_WORD_SIZE]; //   THE ENTRY ITEM
+			TName[0] = 0;
+			strcpy(TName, WriteMeaning(masterid));
+			if (!(flags & NOUN));	// ONLY ACCEPT NOUN HIERARCHY OF WORDNET
+			else if (!strcmp(ptrtype, "+")) { ; } //   derivationaly related
+			else if (!strcmp(ptrtype, "&")) { ; } //   adj which comes from verb -- SIMILAR
+			else if (!strcmp(ptrtype, "<")) { ; } //   adj which comes from verb
+			else if (!strcmp(ptrtype, "*")) { ; } //   implies (verb)
+			else if (!strcmp(ptrtype, ">")) { ; } //   cause (verb)
+			else if (!strcmp(ptrtype, "=")) //   attribute (noun)
+			{
+				//	CreateFact(masterid ,MakeMeaning(StoreWord("attribute")),referMeaning);   //   unworthy attribute/value of worthiness
+			}
+			else if (!strcmp(ptrtype, "@") || !strcmp(ptrtype, "@i")) //   we are a child of or an instance of (NOUNS AND VERBS ONLY)
+			{
+				CreateFact(masterid, Mis, referMeaning); //we have refer as parent (and he has us as child) -- NOT just for classes.
+			}
+			else if (!strcmp(ptrtype, "!")) { ; } //     see opposite.tbl
+			else if (!strcmp(ptrtype, "~")) //   referName is a child of TName (NOUNS and VERBS ONLY)
+			{
+				CreateFact(referMeaning, Mis, masterid); //   there can be multiple is_a pointers (like person is causal_agent and an organism )
+			}
+			else if (!strcmp(ptrtype, "#m")) { ; }//   member of (second baseman)
+			else if (!strcmp(ptrtype, "%m")) { ; } //   whole of (baseball team)
+			else if (!strcmp(ptrtype, "%p")) { ; }//   has as parts
+			else if (!strcmp(ptrtype, "#p")) { ; } //   part of it
+			else if (!strcmp(ptrtype, "#s")) { ; } //   flour goes into cake
+			else if (!strcmp(ptrtype, "%s")) { ; } //   joint made of cannabis
+		}
+		flags = oldflags;
+
+		//   mark multiword verbs phrasal/prepositional, as requiring direct object and contiguous or split
+		if (flags & VERB)
+		{
+			for (unsigned int i = 0; i < meaningIndex; ++i)
+			{
+				MEANING M = meanings[i];
+				if (!M) continue;	//   got erased
+				WORDP D = Meaning2Word(M); //   THIS was the dictionary name
+				char* ptr = strrchr(D->word, '_');
+				if (!ptr) continue;
+				//   look at last word. if it is preposition verb REQUIRES direct object
+				WORDP E = FindWord(ptr + 1, 0, PRIMARY_CASE_ALLOWED);
+			}
+		}
+
+		//   verbs  have prototype sentences format (indicating the need for an object or not)
+		if (ptr[1] != '|' && flags & VERB)
+		{
+			int frameCnt; //   number of entries
+			ptr = SkipWhitespace(ptr);
+			ptr = ReadInt(ptr, frameCnt);
+			while (frameCnt-- > 0) //   for each entry
+			{
+				ptr = ReadWord(ptr, junk); //   the +
+				int frameNumber;
+				ptr = SkipWhitespace(ptr);
+				ptr = ReadInt(ptr, frameNumber); //   from list beow
+				if (!frameNumber) assert(false);
+#ifdef INFORMATION
+				x1    Something----s   INTRANS
+					x2    Somebody----s	INTRANS
+					x3    It is----ing		INTRANS
+					x ? 4    Something is----ing PP	INTRANS
+					x ? 5    Something----s something Adjective / Noun(does this mean modified noun or adj ? )  ADJOBJECT
+					x ? 6    Something----s Adjective / Noun  ADJOBJECT
+					x7    Somebody----s Adjective  ADJOBJ
+					x8    Somebody----s something  TRANS
+					x9    Somebody----s somebody TRANS
+					x10    Something----s somebody TRANS
+					x11    Something----s something TRANS
+					12    Something----s to somebody
+					13    Somebody----s on something
+					x14    Somebody----s somebody something TRANS(dual)
+					15    Somebody----s something to somebody
+					16    Somebody----s something from somebody
+					17    Somebody----s somebody with something
+					18    Somebody----s somebody of something
+					19    Somebody----s something on somebody
+					20    Somebody----s somebody PP
+					21    Somebody----s something PP
+					22    Somebody----s PP
+					x23    Somebody s(body part)----s INTRANS
+					24    Somebody----s somebody to INFINITIVE x
+					25    Somebody----s somebody INFINITIVE  x
+					26    Somebody----s that CLAUSE
+					27    Somebody----s to somebody
+					28    Somebody----s to INFINITIVE  x
+					29    Somebody----s whether INFINITIVE
+					30    Somebody----s somebody into V - ing something
+					31    Somebody----s something with something
+					32    Somebody----s INFINITIVE  x
+					33    Somebody----s VERB - ing
+					34    It----s that CLAUSE
+					35    Something----s INFINITIVE x
+#endif
+					uint64 synsetNum;
+				ptr = SkipWhitespace(ptr);
+				ptr = ReadHex(ptr, synsetNum); //   word in synset it applies to (00 means ALL)
+				for (unsigned int i = 0; i < meaningIndex; ++i)
+				{
+					MEANING M = meanings[i];
+					if (!M) continue;	//   deleted meaning
+					WORDP D = Meaning2Word(M); //   THIS was the dictionary name
+					if (synsetNum == 0 || synsetNum == (i - 1)) //   all or us?
+					{
+						if (frameNumber == 1 || frameNumber == 2 || frameNumber == 3 || frameNumber == 4 || frameNumber == 23)
+						{
+							AddSystemFlag(D, VERB_NOOBJECT);
+							// ALL can be used w/o object
+						}
+						else if (frameNumber == 8 || frameNumber == 9 || frameNumber == 10 || frameNumber == 11 || (frameNumber >= 15 && frameNumber <= 21)) AddSystemFlag(D, VERB_DIRECTOBJECT);
+						else if (frameNumber == 24)  AddSystemFlag(D, VERB_TAKES_INDIRECT_THEN_TOINFINITIVE);
+						else if (frameNumber == 25)  AddSystemFlag(D, VERB_TAKES_INDIRECT_THEN_VERBINFINITIVE);
+						//   BUG- what if frame 6 uses noun? how do we know what that looks like?
+						else if (frameNumber == 31 || frameNumber == 30 || frameNumber == 7 || frameNumber == 6 || frameNumber == 5)
+						{
+							//AddSystemFlag(D,VERB_ADJECTIVE_OBJECT); //meaningless? not a linking verb
+						}
+						else if (frameNumber == 14) AddSystemFlag(D, VERB_INDIRECTOBJECT | VERB_DIRECTOBJECT);
+						else if (frameNumber == 28) AddSystemFlag(D, VERB_TAKES_TOINFINITIVE);
+						else if (frameNumber == 32 || frameNumber == 35) AddSystemFlag(D, VERB_TAKES_VERBINFINITIVE);
+						else if (frameNumber == 33) AddSystemFlag(D, VERB_TAKES_GERUND);
+						else
+						{
+							//  ReportBug("unknown sentence construction")
+						}
+					}
+					if (synsetNum != 0) //   we are done with the specific one we wanted
+						break;
+				}
+			}
+		}
+		if (ptr[0] == '|') ++ptr;
+		else if (ptr[1] == '|') ptr += 2;
+		else ReportBug("baddata")
+			if (*ptr == ' ') ++ptr; //   skip leading blank
+
+									//   grab gloss - erase end of line and any quote area
+		char gloss[MAX_BUFFER_SIZE];
+		char* p = gloss;
+		while (*ptr != 0 && *ptr != '\n' && *ptr != '\r' && *ptr != '"') *p++ = *ptr++;
+		*p = 0;
+
+		//   delete a parenthetical expression from gloss
+		if ((p = strchr(gloss, '(')))
+		{
+			char* q = strchr(p, ')');
+			if (q) strcpy(p, q + 1);
+			else *p = 0; //   failed to find end, just delete it all
+		}
+		// delete notes like: -- used only in infinitive form
+		p = strstr(gloss, "--");
+		if (p) *p = 0;
+		TrimSpaces(gloss);
+		char* at = strchr(gloss, ';');
+		if (at) *at = 0;
+		at = gloss;
+		while (*at == ' ') at++;
+
+		if (*at)
+		{
+			// now remove excess blanks (so readcompiledword doesnt complain)
+			char* ptr = at;
+			while (*++ptr)
+			{
+				if (*ptr == ' ' && ptr[1] == ' ')
+				{
+					memmove(ptr, ptr + 1, strlen(ptr));
+					--ptr;
+				}
+			}
+			AddGloss(master, AllocateHeap(at), 1);
+		}
+	}
+	fclose(in);
+}
+
+static void readConjunction(char* file)
+{
+	char word[MAX_WORD_SIZE];
+	FILE* in = FopenReadNormal(file);
+	if (!in)
+	{
+		Log(STDUSERLOG, "** Missing file %s\r\n", file);
+		return;
+	}
+	while (fget_input_string(false, false, readBuffer, in) != 0)
+	{
+		if (readBuffer[0] == '#' || readBuffer[0] == 0) continue;
+		char* ptr = readBuffer;
+		ptr = ReadWord(ptr, word);    //   the conjunction
+		if (*word == 0 || *word == '#')  continue;
+		WORDP D = StoreWord(word, 0, KINDERGARTEN);
+
+		// the flags to add
+		while (ALWAYS)
+		{
+			ptr = ReadWord(ptr, word); //   see if  PROPERTY exists
+			if (!*word || *word == '#') break;
+			uint64 bit = FindValueByName(word);
+			if (bit) AddProperty(D, bit);
+			else
+			{
+				bit = FindSystemValueByName(word);
+				if (bit) AddSystemFlag(D, bit);
+			}
+		}
+		if (D->properties & CONJUNCTION) AddMeaning(D, 0);//   reserve meaning untyped (conjunction) -- dont reserve meaning for adverb
+
+	}
+	fclose(in);
+}
+
+static void readWordKind(char* file, unsigned int flags)
+{
+	char word[MAX_WORD_SIZE];
+	FILE* in = FopenReadNormal(file);
+	if (!in)
+	{
+		Log(STDUSERLOG, "** Missing file %s\r\n", file);
+		return;
+	}
+	uint64 kind = 0;
+	uint64 sys = 0;
+	while (fget_input_string(false, false, readBuffer, in) != 0)
+	{
+		if (readBuffer[0] == '#' || readBuffer[0] == 0) continue;
+		char* ptr = readBuffer;
+		while (ALWAYS)//   read all words on this line
+		{
+			ptr = ReadWord(ptr, word);
+			if (*word == 0 || *word == '#') break;
+			if (*word == ':') //   word class (preposition, noun, etc - will be on a line by itself
+			{
+				MakeUpperCase(word);
+				kind = FindValueByName(word + 1);
+				sys = 0;
+				if (kind == ADJECTIVE)
+				{
+					kind |= ADJECTIVE_NORMAL;
+					sys = 0;
+				}
+				else if (kind == ADVERB)
+				{
+					kind |= ADVERB;
+					sys = 0;
+				}
+				else if (!kind) ReportBug("word class not found %s", word)
+			}
+			else
+			{
+				WORDP D = StoreWord(word, kind, sys);
+				AddSystemFlag(D, flags | KINDERGARTEN);
+				if (D->properties & NOUN)
+				{
+					char flag[MAX_WORD_SIZE];
+					char* at = ReadWord(ptr, flag);
+					if (!stricmp(flag, "NOUN_NUMBER"))
+					{
+						ptr = at;
+						RemoveProperty(D, NOUN_SINGULAR | NOUN_PLURAL);
+						AddProperty(D, NOUN_NUMBER);
+					}
+					else if (IsUpperCase(*D->word)) AddProperty(D, NOUN_PROPER_SINGULAR);
+					else if (IsNumber(D->word, false)) AddProperty(D, NOUN_NUMBER);
+					else AddProperty(D, NOUN_SINGULAR);
+				}
+				if (D->properties & ADJECTIVE)
+				{
+					if (IsNumber(D->word, false))
+					{
+						RemoveProperty(D, ADJECTIVE_BITS);
+						AddProperty(D, ADJECTIVE_NUMBER);
+					}
+				}
+				if (IsPlaceNumber(word))
+				{
+					RemoveProperty(D, ADJECTIVE_BITS | NOUN_NUMBER);
+					AddProperty(D, ADJECTIVE | ADJECTIVE_NUMBER | NOUN_NUMBER); // web says must only be adjective, but "the 4th of July" requires noun
+					AddSystemFlag(D, ORDINAL);
+					AddParseBits(D, QUANTITY_NOUN);
+				}
+			}
+		}
+	}
+	fclose(in);
+}
+
+static void readPrepositions(char* file, bool addmeaning)
+{ //   LINE oriented
+	char word[MAX_WORD_SIZE];
+	FILE* in = FopenReadNormal(file);
+	if (!in)
+	{
+		Log(STDUSERLOG, "** Missing file %s\r\n", file);
+		return;
+	}
+	uint64 kind;
+	WORDP D;
+	while (fget_input_string(false, false, readBuffer, in) != 0)
+	{
+		if (readBuffer[0] == '#' || readBuffer[0] == 0) continue;
+		kind = 0;
+		char* ptr = ReadCompiledWord(readBuffer, word);    //   the prep or kind
+		if (*word == 0 || *word == '#') continue; //   end of line
+		D = StoreWord(word, PREPOSITION);
+		// a prep can also be a noun "behalf" so dont erase it
+		if (addmeaning) AddTypedMeaning(D, 0);//   reserve meaning but prep is not a type of relevance
+		ptr = ReadCompiledWord(ptr, word);
+
+		if (!stricmp(word, "CONDITIONAL_IDIOM"))
+		{
+			ptr = ReadCompiledWord(ptr, word);
+			AddSystemFlag(D, CONDITIONAL_IDIOM);
+			D->w.conditionalIdiom = AllocateHeap(word);
+		}
+		if (strchr(D->word, '_') && D->properties & (ADVERB | ADJECTIVE))
+		{
+			Log(STDUSERLOG, "Multiprep has other meanings %s\r\n", D->word);
+		}
+	}
+	fclose(in);
+}
+
+
+static void readSpellingExceptions(char* file) // dont double consonants when making past tense
+{
+	char input_string[MAX_BUFFER_SIZE];
+	char word[MAX_WORD_SIZE];
+	FILE* in = FopenReadNormal(file);
+	if (!in)
+	{
+		Log(STDUSERLOG, "** Missing file %s\r\n", file);
+		return;
+	}
+	while (fget_input_string(false, false, input_string, in) != 0)
+	{
+		if (input_string[0] == '#' || input_string[0] == 0) continue;
+		char* ptr = input_string;
+		ptr = ReadWord(ptr, word);
+		if (*word == 0) continue;
+		WORDP D = StoreWord(word, 0);
+		AddSystemFlag(D, SPELLING_EXCEPTION);
+	}
+	fclose(in);
+}
+
+static void AdjNotPredicate(char* file)
+{
+	char input_string[MAX_BUFFER_SIZE];
+	char word[MAX_WORD_SIZE];
+	FILE* in = FopenReadNormal(file);
+	if (!in)
+	{
+		Log(STDUSERLOG, "** Missing file %s\r\n", file);
+		return;
+	}
+	while (fget_input_string(false, false, input_string, in) != 0)
+	{
+		if (input_string[0] == '#' || input_string[0] == 0) continue;
+		char* ptr = input_string;
+		while (ptr)
+		{
+			ptr = ReadWord(ptr, word);
+			if (*word == 0) break;
+			WORDP D = StoreWord(word, ADJECTIVE | ADJECTIVE_NORMAL);
+			AddSystemFlag(D, ADJECTIVE_NOT_PREDICATE);
+		}
+	}
+	fclose(in);
+}
+
+static bool readPronouns(char* file)
+{
+	char input_string[MAX_BUFFER_SIZE];
+	char word[MAX_WORD_SIZE];
+	FILE* in = FopenReadNormal(file);
+	if (!in)
+	{
+		Log(STDUSERLOG, "** Missing file %s\r\n", file);
+		return false;
+	}
+	while (fget_input_string(false, false, input_string, in) != 0)
+	{
+		if (input_string[0] == '#' || input_string[0] == 0) continue;
+		char* ptr = input_string;
+		ptr = ReadWord(ptr, word);    //   the pronoun
+		if (*word == 0) continue;
+		WORDP D = StoreWord(word, 0);
+		AddSystemFlag(D, KINDERGARTEN);
+		AddMeaning(D, 0);//   reserve meaning to self - no pronoun type
+
+		while (ALWAYS)
+		{
+			ptr = ReadWord(ptr, word); //   see if  PROPERTY exists
+			if (!*word || *word == '#') break;
+			uint64 bit = FindValueByName(word);
+			if (bit) AddProperty(D, bit);
+			else
+			{
+				bit = FindSystemValueByName(word);
+				if (bit) AddSystemFlag(D, bit);
+			}
+		}
+	}
+	fclose(in);
+	return true;
+}
+
+static void readHomophones(char* file)
+{
+	char input_string[MAX_BUFFER_SIZE];
+	char word[MAX_WORD_SIZE];
+	FILE* in = FopenReadNormal(file);
+	if (!in)
+	{
+		Log(STDUSERLOG, "** Missing file %s\r\n", file);
+		return;
+	}
+	while (fget_input_string(false, false, input_string, in) != 0)
+	{
+		if (input_string[0] == '#' || input_string[0] == 0) continue;
+		char* ptr = input_string;
+		WORDP D = NULL;
+		WORDP E = NULL;
+		while (ALWAYS)
+		{
+			ptr = ReadWord(ptr, word);    //   the word
+			if (*word == 0) break;
+			if (*word == '/') continue;
+			if (*word == '(') break; //   pure pronunciation
+			unsigned int n = BurstWord(word);
+			strcpy(word, JoinWords(n, false));
+			D = StoreWord(word, 0);
+			if (E)	CreateFact(MakeMeaning(D, 0), MakeMeaning(FindWord("homophone")), MakeMeaning(E, 0));
+			E = D;
+		}
+	}
+	fclose(in);
+}
+
+static void AdjustAdjectiveAdverb(WORDP D, uint64 junk) // fix comparitives that look like normal
+{
+	if (!(D->properties & (MORE_FORM | MOST_FORM))) { ; }
+	else return;
+
+	unsigned int len = D->length;
+	char word[MAX_WORD_SIZE];
+	strcpy(word, D->word);
+	WORDP X;
+	if (len > 4 && !strcmp(D->word + len - 2, "er"))
+	{
+		word[len - 1] = 0; // see if word ENDED in E and R was added
+		X = FindWord(word, 0, PRIMARY_CASE_ALLOWED);
+		if (!X || !(X->properties & (ADJECTIVE | ADVERB)))
+		{
+			word[len - 2] = 0;		// see if word had ER added
+			X = FindWord(word, 0, PRIMARY_CASE_ALLOWED);
+		}
+		if (!X || !(X->properties & (ADJECTIVE | ADVERB)))
+		{
+			if (word[len - 3] == word[len - 4]) word[len - 3] = 0; // see if word doubled end consonant to add er
+			else if (word[len - 3] == 'i') word[len - 3] = 'y'; // see if word converted y to i and then er
+			X = FindWord(word, 0, PRIMARY_CASE_ALLOWED);
+		}
+		if (X && (X->properties & (ADJECTIVE | ADVERB)))
+		{
+			AddCircularEntry(X, COMPARISONFIELD, D);
+			if (D->properties & ADJECTIVE) AddProperty(D, MORE_FORM);
+			if (D->properties & ADVERB) AddProperty(D, MORE_FORM);
+		}
+
+	}
+	else if (len > 5 && !strcmp(D->word + len - 3, "est"))
+	{
+		word[len - 2] = 0; // see if word ENDED in E and ST was added
+		X = FindWord(word, 0, PRIMARY_CASE_ALLOWED);
+		if (!X || !(X->systemFlags & (ADJECTIVE | ADVERB)))
+		{
+			word[len - 3] = 0;		// see if word had EST added
+			X = FindWord(word, 0, PRIMARY_CASE_ALLOWED);
+		}
+		if (!X || !(X->systemFlags & (ADJECTIVE | ADVERB)))
+		{
+			if (word[len - 4] == word[len - 5]) word[len - 4] = 0; // see if word doubled end consonant to add est
+			else if (word[len - 4] == 'i') word[len - 4] = 'y'; // see if word converted y to i and then er
+			X = FindWord(word, 0, PRIMARY_CASE_ALLOWED);
+		}
+		if (X && X->systemFlags & (ADJECTIVE | ADVERB))
+		{
+			AddCircularEntry(X, COMPARISONFIELD, D);
+			if (D->properties & ADJECTIVE) AddProperty(D, MOST_FORM);
+			if (D->properties & ADVERB) AddProperty(D, MOST_FORM);
+		}
+	}
+}
+
+static void ReadBNCPosData()
+{
+	char word[MAX_WORD_SIZE];
+	FILE* in = FopenReadNormal("RAWDICT/bncfreq1.txt");
+	if (!in)
+	{
+		Log(STDUSERLOG, "** Missing file RAWDICT/bncfreq1.txt\r\n");
+		return;
+	}
+	showBadUTF = false;
+	while (ReadALine(readBuffer, in) >= 0)
+	{
+		char*  ptr = ReadCompiledWord(readBuffer, word);    //   word NOUN:4 VERB:0 ADJECTIVE:0 ADVERB:0 PREOPOSTION:0 CONJUNCTION:0 AUX:0 
+		if (word[0] == '#' || word[0] == 0) continue;
+		WORDP D = FindWord(word, 0, PRIMARY_CASE_ALLOWED);
+		if (D && D->internalBits & DELETED_MARK) D = NULL; // deleted word
+		if (!D || !(D->properties & PART_OF_SPEECH))  continue; // we dont know this word naturally already and they have junk words...
+
+		int best = 0;
+		int changed = 0;
+		int count = 0;
+		int ntally, vtally, jtally, rtally, ptally;
+		int ctally = 0;
+		ptr = SkipWhitespace(ptr);
+		ptr = ReadCompiledWord(ptr, word); // NOUN:
+		ReadInt(word + 5, ntally);
+		if (ntally > best) best = ntally;
+
+		ptr = SkipWhitespace(ptr);
+		ptr = ReadCompiledWord(ptr, word); // VERB:
+		ReadInt(word + 5, vtally);
+		if (vtally > best)  best = vtally;
+
+		ptr = SkipWhitespace(ptr);
+		ptr = ReadCompiledWord(ptr, word); // ADJECTIVE:
+		ReadInt(word + 10, jtally);
+		if (jtally>best)  best = jtally;
+
+		ptr = SkipWhitespace(ptr);
+		ptr = ReadCompiledWord(ptr, word); // ADVERB:
+		ReadInt(word + 7, rtally);
+		if (rtally>best)  best = rtally;
+
+		ptr = SkipWhitespace(ptr);
+		ptr = ReadCompiledWord(ptr, word); // PREPOSITION:
+		ReadInt(word + 12, ptally);
+		if (ptally>best)
+			best = ptally;
+
+		ptr = SkipWhitespace(ptr);
+		ptr = ReadCompiledWord(ptr, word); // CONJUNCTION:
+		ReadInt(word + 12, ctally);
+		if (ctally>best)
+			best = ctally;
+
+		// now remove clear noncontenders
+		if (ntally && ((ntally * 2) < best)) ntally = 0;
+		if (vtally && ((vtally * 2) < best)) vtally = 0;
+		if (jtally && ((jtally * 2) < best)) jtally = 0;
+		if (rtally && ((rtally * 2) < best)) rtally = 0;
+		if (ptally && ((ptally * 2) < best)) ptally = 0;
+		if (ctally && ((ctally * 2) < best)) ctally = 0;
+		uint64 newflags = 0;
+
+		if (ntally) newflags |= NOUN;
+		if (vtally) newflags |= VERB;
+		if (jtally) newflags |= ADJECTIVE;
+		if (rtally) newflags |= ADVERB;
+		if (ptally || ctally) newflags |= PREPOSITION; // either
+		AddSystemFlag(D, newflags);
+	}
+	fclose(in);
+	showBadUTF = true;
+}
+
+static void readFix(char* file, uint64 flag) //   locate a base form from an inflection
+{
+	char input_string[MAX_BUFFER_SIZE];
+	char word[MAX_WORD_SIZE];
+	char base[MAX_WORD_SIZE];
+	char word2[MAX_WORD_SIZE];
+	FILE* in = FopenReadNormal(file);
+	if (!in)
+	{
+		Log(STDUSERLOG, "** Missing file %s\r\n", file);
+		return;
+	}
+	while (ReadALine(input_string, in) >= 0)
+	{
+		//   file is always pairs of words, with base the 2nd
+		if (input_string[0] == '#' || input_string[0] == 0) continue;
+		char* ptr = input_string;
+		ptr = ReadWord(ptr, word);    //   the inflected/modified form
+		if (*word == 0)
+			continue;
+		if (!stricmp(word, "won") || !stricmp(word, "shot") || !stricmp(word, "spat")) continue;	//   dont want wordnet wonned won stuff
+		ptr = ReadWord(ptr, base); //   2nd form is the base
+		if (!stricmp(word, base))
+		{
+			Log(STDUSERLOG, "     inflected %s not different\r\n", word);
+			continue;
+		}
+
+		WORDP B = FindWord(base, 0, PRIMARY_CASE_ALLOWED);
+		if (!B || !(B->properties & flag)) //   base word NOT found or not found haing that type??? (eg. acer acer
+		{
+			if (!(flag & NOUN))
+			{
+				Log(STDUSERLOG, "Ignoring fix on %s since base not found\r\n", input_string);
+				continue;	//   IGNORE THIS EXCEPTION
+			}
+		}
+		B = StoreWord(base, flag);
+
+		WORDP D = StoreWord(word, flag);
+		if (flag & VERB) //   will be PAST or PARTICIPLE, NO guarantee of order (comes in alphabetically)
+		{
+			AddProperty(B, VERB_INFINITIVE | VERB_PRESENT);
+			if (!stricmp(B->word, "bit") || !stricmp(B->word, "be") || !stricmp(B->word, "have")) continue; //   they dont conjugate in wordnet in proper order for these to be accepted
+			size_t len = strlen(word);
+
+			if (word[len - 1] == 'g' && word[len - 2] == 'n' && word[len - 3] == 'i') AddProperty(D, VERB_PRESENT_PARTICIPLE);
+			else if (GetTense(B)) AddProperty(D, VERB_PAST_PARTICIPLE);
+			else AddProperty(D, VERB_PAST);  // 1st one will be past  
+			AddCircularEntry(B, TENSEFIELD, D);
+		}
+		if (flag & ADJECTIVE && stricmp(base, word)) // ignore dual same stuff, like modest modest from wordnet
+		{
+			size_t len = strlen(word);
+			//   base cannot also be comparative form
+			if (B->properties & (MORE_FORM | MOST_FORM)) Log(STDUSERLOG, "inconsistent adjective irregular %s\r\n", B->word);
+			else
+			{
+				AddCircularEntry(B, COMPARISONFIELD, D);
+				RemoveProperty(D, MORE_FORM);
+				AddProperty(D, (word[len - 1] == 't' && word[len - 2] == 's') ? MOST_FORM : MORE_FORM);
+			}
+		}
+		if (flag & ADVERB && stricmp(base, word)) // ignore dual same stuff from wordnet
+		{
+			//   base cannot also be comparative form
+			if (B->properties & (MORE_FORM | MOST_FORM)) Log(STDUSERLOG, "inconsistent adjective irregular %s\r\n", B->word);
+			AddCircularEntry(B, COMPARISONFIELD, D);
+			RemoveProperty(D, MOST_FORM);
+			AddProperty(D, MORE_FORM);
+			ReadWord(ptr, word2);	// "most" form
+			if (*word2)
+			{
+				WORDP E = StoreWord(word2, ADVERB | ADVERB | MOST_FORM);
+				RemoveProperty(E, MORE_FORM);
+				AddCircularEntry(B, COMPARISONFIELD, E);
+			}
+		}
+		if (flag & NOUN)
+		{
+			RemoveProperty(B, NOUN_PLURAL);
+			AddProperty(B, NOUN_SINGULAR);
+			if (stricmp(B->word, D->word)) RemoveProperty(D, NOUN_SINGULAR); // different words word
+			AddProperty(D, NOUN_PLURAL);
+			if (stricmp(D->word, B->word) && !(D->properties & PRONOUN_BITS))    //   not same word, can they find
+			{
+				WORDP plural = FindCircularEntry(D, NOUN_PLURAL);
+				if (plural == D) { ; } // already on list and is good
+				else if (plural) // on list but NOT what we are expecting
+					Log(STDUSERLOG, "plural->Singular collision %s %s %s\r\n", B->word, D->word, plural->word);
+				else AddCircularEntry(D, PLURALFIELD, B);
+			}
+		}
+	}
+	fclose(in);
+}
+
+static void ReadTitles(char* file)
+{
+	char input_string[MAX_BUFFER_SIZE];
+	char word[MAX_WORD_SIZE];
+	FILE* in = FopenReadNormal(file);
+	if (!in)
+	{
+		Log(STDUSERLOG, "** Missing file %s\r\n", file);
+		return;
+	}
+
+	while (fget_input_string(false, false, input_string, in) != 0)
+	{
+		if (input_string[0] == 0) continue;
+		char* ptr = input_string;
+		while (ptr && *ptr)
+		{
+			ptr = ReadWord(ptr, word);    //   the noun
+			if (*word == 0 || *word == '#') break;
+			WORDP D = StoreWord(word, NOUN_TITLE_OF_ADDRESS | NOUN | NOUN_PROPER_SINGULAR, KINDERGARTEN);
+			RemoveInternalFlag(D, DELETED_MARK);
+		}
+	}
+	fclose(in);
+}
+
+static void InsurePhrasalMeaning(char* verb, char* gloss)
+{
+	// mark all particles
+	char* end = strrchr(verb, '_');
+	StoreWord(end + 1, PARTICLE);  // mark last word as a particle
+
+								   // in case of 4 long phrase which we dont handle "be_cut_out_for"  but we handle 
+
+	unsigned int index;
+	WORDP D = FindWord(verb, 0, PRIMARY_CASE_ALLOWED); // does it already exist?
+	unsigned int hasgloss = 0;
+	unsigned int nogloss = 0;
+	bool hasVerbMeaning = false;
+	if (D && D->properties & VERB && D->properties & VERB_INFINITIVE) // has prexising verbs
+	{
+		for (unsigned int i = GetMeaningCount(D); i >= 1; --i)
+		{
+			MEANING M = GetMeaning(D, i);
+			if (!(M & VERB)) continue;
+			// self pointing sysnet verb ref will be what we want
+			if (M & SYNSET_MARKER && Meaning2Word(M) == D)
+			{
+				if (GetGloss(D, i)) hasgloss = i;
+				else nogloss = i;
+			}
+			else hasVerbMeaning = true;
+		}
+	}
+	D = StoreWord(verb, VERB | VERB_INFINITIVE | VERB_PRESENT, PHRASAL_VERB | VERB_CONJUGATE1);
+	if (hasVerbMeaning) { ; } // from wordnet already
+	else if (!hasgloss && nogloss)
+	{
+		if (gloss) AddGloss(D, AllocateHeap(gloss), nogloss); // found an existing place to add it
+	}
+	else if (!hasgloss && !nogloss)// create a meaning for it
+	{
+		AddTypedMeaning(D, VERB);
+		index = GetMeaningCount(D);
+		if (gloss) AddGloss(D, AllocateHeap(gloss), index);
+	}
+}
+
+static void ReadPhrasalVerb(char* file)
+{
+	char input_string[MAX_BUFFER_SIZE];
+	char verb[MAX_WORD_SIZE];
+	char word[MAX_WORD_SIZE];
+	FILE* in = FopenReadNormal(file);
+	if (!in)
+	{
+		Log(STDUSERLOG, "** Missing file %s\r\n", file);
+		return;
+	}
+	while (fget_input_string(false, false, input_string, in) != 0)
+	{
+		char* ptr = input_string;
+		ptr = ReadCompiledWord(ptr, verb);    //   the word
+		if (!*verb || *verb == '#')   continue;
+		char* gloss = strchr(input_string, ':');
+		if (gloss) *gloss++ = 0;
+		else gloss = NULL;
+
+		// read words or flags of various flavors
+		uint64 flags = 0;
+		while (ptr && *ptr)
+		{
+			ptr = ReadCompiledWord(ptr, word);
+			if (!*word) break;
+			else if (IsUpperCase(*word)) flags |= FindSystemValueByName(word);// direct flags of our sort given
+		}
+
+		WORDP X = FindWord(verb);
+		if (X)
+		{
+			//		if (flags & VERB_NOOBJECT && !(X->systemFlags & VERB_NOOBJECT)) Log(STDUSERLOG,"Extra noobject on %s\r\n",X->word);
+			//		if (flags & VERB_DIRECTOBJECT && !(X->systemFlags & VERB_DIRECTOBJECT)) Log(STDUSERLOG,"Extra directobject on %s\r\n",X->word);
+			//		continue;
+		}
+
+		// now add in word
+		InsurePhrasalMeaning(verb, gloss);
+		WORDP D = StoreWord(verb, VERB | VERB_PRESENT | VERB_INFINITIVE, flags);
+	}
+	fclose(in);
+}
+
+static void readCommonness()
+{
+	FILE* in = fopen("RAWDICT/1gramfreq.txt", "rb");
+	if (!in) return;
+	while (ReadALine(readBuffer, in) >= 0)
+	{
+		char word[MAX_WORD_SIZE];
+		char junk[MAX_WORD_SIZE];
+		char* ptr = ReadCompiledWord(readBuffer, word);
+		ptr = ReadCompiledWord(ptr, junk);
+		if (IsUpperCase(word[0])) continue; // ignore proper
+		WORDP D = FindWord(word);
+		if (!D) continue; // we dont know the word
+		unsigned int val = atoi(ptr);
+		if (val > 1000000000) AddSystemFlag(D, COMMON7); // above 1 billion
+		else if (val > 100000000) AddSystemFlag(D, COMMON6); // above 100 million
+		else if (val > 10000000) AddSystemFlag(D, COMMON5);  // above 10 million
+		else if (val > 1000000) AddSystemFlag(D, COMMON4);  // above 1 million
+		else if (val > 100000) AddSystemFlag(D, COMMON3);  // above 100 K
+		else if (val > 10000) AddSystemFlag(D, COMMON2);  // above 10 K
+		else if (val > 100) AddSystemFlag(D, COMMON1);  // above 100
+														// max 2,147,483,647   
+														// min 200
+	}
+	fclose(in);
+}
+
+static void readSupplementalWord(char* file, uint64 type, uint64 flags)
+{
+	char input_string[MAX_BUFFER_SIZE];
+	char word[MAX_WORD_SIZE];
+	FILE* in = FopenReadNormal(file);
+	if (!in)
+	{
+		Log(STDUSERLOG, "** Missing file %s\r\n", file);
+		return;
+	}
+	char condition[MAX_WORD_SIZE];
+	while (fget_input_string(false, false, input_string, in) != 0)
+	{
+		char* ptr = input_string;
+		ptr = ReadWord(ptr, word);    //   the word
+		if (!*word || *word == '#')
+		{
+			continue;
+		}
+		WORDP X = FindWord(word, 0, PRIMARY_CASE_ALLOWED);
+		if (X && X->properties & flags) ReportBug("%s already exists with pos %x from file %s\r\n", X->word, (unsigned int)flags, file);
+		WORDP D;
+		if (type & NOUN)
+		{
+			// noun
+			// noun plural
+			D = StoreWord(word, type, flags);
+			if (D->internalBits & UPPERCASE_HASH) AddProperty(D, NOUN_PROPER_SINGULAR);
+			else AddProperty(D, NOUN_SINGULAR);
+			AddTypedMeaning(D, NOUN); // self point
+			uint64 props = 0;
+			while (ptr && *ptr)
+			{
+				ptr = ReadWord(ptr, word); // "add a meaning or is the plural or is a mass noun
+				if (!*word || *word == '#') break;
+				if (!stricmp(word, "CONDITIONAL_IDIOM"))
+				{
+					ptr = ReadCompiledWord(ptr, word);
+					AddSystemFlag(D, CONDITIONAL_IDIOM);
+					D->w.conditionalIdiom = AllocateHeap(word);
+					continue;
+				}
+				if (!stricmp(word, "NOUN_MASS")) flags |= NOUN_NODETERMINER;
+				else if (!stricmp(word, "NOUN_PLURAL")) props |= NOUN_PLURAL;
+				else if (!stricmp(word, "NOUN_SINGULAR")) props |= NOUN_SINGULAR;
+				else if (!stricmp(word, "NOUN_PROPER_SINGULAR")) props |= NOUN_PROPER_SINGULAR;
+				else if (!stricmp(word, "NOUN_PROPER_PLURAL")) props |= NOUN_PROPER_PLURAL;
+				else if (!stricmp(word, "NOUN_NUMBER")) props |= NOUN_NUMBER;
+				else  // is conjugation
+				{
+					WORDP E = StoreWord(word, type, flags);
+					if (E->internalBits & UPPERCASE_HASH) AddProperty(E, NOUN_PROPER_PLURAL);
+					else AddProperty(E, NOUN_PLURAL);
+					RemoveProperty(E, NOUN_PROPER_SINGULAR);
+					if (!GetPlural(D))  SetPlural(D, MakeMeaning(E));
+					if (!GetPlural(E)) SetPlural(E, MakeMeaning(D));
+				}
+			}
+			if (props)
+			{
+				AddProperty(D, props);
+				if (props & NOUN_SINGULAR && !(props & NOUN_PLURAL)) RemoveProperty(D, NOUN_PLURAL);
+				if (props & NOUN_PROPER_SINGULAR && !(props & NOUN_PROPER_PLURAL)) RemoveProperty(D, NOUN_PROPER_PLURAL);
+				if (props & NOUN_PLURAL && !(props & NOUN_SINGULAR)) RemoveProperty(D, NOUN_SINGULAR);
+				if (props & NOUN_PROPER_PLURAL && !(props & NOUN_PROPER_SINGULAR)) RemoveProperty(D, NOUN_PROPER_SINGULAR);
+				if (props & NOUN_NUMBER) RemoveProperty(D, NOUN_SINGULAR | NOUN_PLURAL);
+			}
+			if (flags) AddSystemFlag(D, flags);
+		}
+		else if (type & VERB)
+		{
+			uint64 sysflags = 0;
+			uint64 flags = type;
+
+			// determine conjugation
+			int n = BurstWord(word, HYPHENS);	//   find the words
+			if (n > 1) //   see spot conjugated
+			{
+				char* w;
+				if ((w = GetBurstWord(0)) && w[0] == '\'') sysflags |= VERB_CONJUGATE1;
+				else if (n > 1 && (w = GetBurstWord(1)) && w[0] == '\'') sysflags |= VERB_CONJUGATE2;
+				else if (n > 2 && (w = GetBurstWord(2)) && w[0] == '\'') sysflags |= VERB_CONJUGATE3;
+				w = strchr(word, '\'');
+				if (w) memmove(w, w + 1, strlen(w));	//   erase the conjugation mark
+
+														//   assume it if not given 
+				if (!(sysflags & (VERB_CONJUGATE1 | VERB_CONJUGATE2 | VERB_CONJUGATE3)))
+				{
+					if (strchr(word, '-')) sysflags |= VERB_CONJUGATE2;
+					else if (strchr(word, '_')) sysflags |= VERB_CONJUGATE1;
+				}
+			}
+			D = FindWord(word, 0, PRIMARY_CASE_ALLOWED);
+			bool wasverb = (D && D->properties & VERB) ? true : false;
+			bool preknown = (D && (D->systemFlags & PHRASAL_VERB)) ? true : false;
+
+			// verb MODIFIER words
+			char past[MAX_WORD_SIZE];
+			uint64 flagx = 0;
+			StoreWord(word, 0);
+			while (ALWAYS)
+			{
+				ptr = ReadWord(ptr, past);    //   the flag
+				if (!*past || *past == ':' || *past == '#') break;
+				WORDP E;
+				uint64 flag = FindValueByName(past);
+				uint64 sysx = 0;
+				if (!flag) sysx = FindSystemValueByName(past);
+				if (!flag && !sysx) //   must be past tense since we dont recognize it as a modifier
+				{
+					E = StoreWord(past, VERB | VERB_PAST);
+					AddCircularEntry(D, TENSEFIELD, E);
+				}
+				else //   presume for now only synset transitive data
+				{
+					if (flag & (VERB_PRESENT_PARTICIPLE | VERB_PAST)) // tense given
+					{
+						ptr = ReadWord(ptr, past);    //   the word
+						E = StoreWord(past, VERB | flag, sysx);
+						AddCircularEntry(D, TENSEFIELD, E);
+					}
+					else if (flag) AddProperty(D, flag); // property given, 
+					else if (sysx) flagx |= sysx;
+				}
+			}
+
+			char* last = strrchr(word, '_');
+			if (last) Log(STDUSERLOG, "Phrasal verb?? %s\r\n", word);
+			else
+			{
+				if (!wasverb)
+				{
+					D = StoreWord(word, VERB | VERB_INFINITIVE | VERB_PRESENT);
+					AddTypedMeaning(D, VERB);//   reserve a meaning
+				}
+				if (!(D->systemFlags & (VERB_CONJUGATE2 | VERB_CONJUGATE1 | VERB_CONJUGATE3)) && strchr(word, '-')) AddSystemFlag(D, VERB_CONJUGATE2); // assume default for re-xxx pre-xxx etc
+				if (!flagx) AddSystemFlag(D, VERB_DIRECTOBJECT | VERB_NOOBJECT); // default all object notations 
+				else AddSystemFlag(D, flagx);
+			}
+		} //   end verb
+		else // all other parts of speech
+		{
+			WORDP D = StoreWord(word);
+			uint64 props = type;
+			uint64 sys = flags;
+			while (ALWAYS)
+			{
+				char val[MAX_WORD_SIZE];
+				ptr = ReadWord(ptr, val);    //   the flag
+				if (!*val || *val == '#') break;
+				uint64 flag = FindValueByName(val);
+				if (!flag)
+				{
+					flag = FindSystemValueByName(val);
+					if (flag) sys |= flag;
+					else Log(STDUSERLOG, "unknown flag on %s %s\r\n", word, val);
+					if (flag == CONDITIONAL_IDIOM) ptr = ReadWord(ptr, condition); // read in condition
+				}
+				else  props |= flag;
+			}
+			if (sys & CONDITIONAL_IDIOM)
+			{
+				props = 0;
+				if (D->systemFlags & CONDITIONAL_IDIOM) strcat(condition, D->w.conditionalIdiom); // merge idiom controls
+				D->w.conditionalIdiom = AllocateHeap(condition);
+			}
+			if (props & (ADJECTIVE | ADVERB)) AddTypedMeaning(D, props & (ADJECTIVE | ADVERB));
+			if (props) AddProperty(D, props);
+			if (sys) AddSystemFlag(D, sys);
+		}
+	}
+	fclose(in);
+}
+
+static void ReadDeterminers(char* file)
+{
+	char input_string[MAX_BUFFER_SIZE];
+	char word[MAX_WORD_SIZE];
+	FILE* in = FopenReadNormal(file);
+	if (!in)
+	{
+		Log(STDUSERLOG, "** Missing file %s\r\n", file);
+		return;
+	}
+
+	while (fget_input_string(false, false, input_string, in) != 0)
+	{
+		if (input_string[0] == '#' || input_string[0] == 0) continue;
+		char* ptr = input_string;
+		ptr = ReadWord(ptr, word);    //   the determiner
+		if (*word == 0)
+			continue;
+		WORDP D = StoreWord(word, 0, KINDERGARTEN);
+		if (D->properties & NOUN)
+			Log(STDUSERLOG, "Determiner %s is also a noun\r\n", D->word);
+		// RemoveProperty(D, NOUN);  // determiner like "less" can also be a noun
+		AddMeaning(D, 0);//   reserve meaning no determiner type
+
+						 // the flags to add
+		while (ALWAYS)
+		{
+			ptr = ReadWord(ptr, word); //   see if  PROPERTY exists
+			if (!*word || *word == '#') break;
+			uint64 bit = FindValueByName(word);
+			if (bit) AddProperty(D, bit);
+			else
+			{
+				bit = FindSystemValueByName(word);
+				if (bit) AddSystemFlag(D, bit);
+			}
+		}
+		if (!(D->properties & (PREDETERMINER | PREDETERMINER_TARGET))) AddProperty(D, DETERMINER);
+	}
+	RemoveProperty(FindWord("a"), NOUN);
+	RemoveProperty(FindWord("no"), NOUN);
+	RemoveProperty(FindWord("la"), NOUN);
+	fclose(in);
+}
+
+static void ReadSystemFlaggedWords(char* file, uint64 flags)
+{
+	char input_string[MAX_BUFFER_SIZE];
+	char word[MAX_WORD_SIZE];
+	FILE* in = FopenReadNormal(file);
+	if (!in)
+	{
+		Log(STDUSERLOG, "** Missing file %s\r\n", file);
+		return;
+	}
+
+	while (fget_input_string(false, false, input_string, in) != 0)
+	{
+		if (input_string[0] == '#' || input_string[0] == 0) continue;
+		char* ptr = input_string;
+		while (ALWAYS)
+		{
+			ptr = ReadWord(ptr, word);    //   the noun
+			if (*word == 0 || *word == '#' || *word == '~') break;
+			StoreWord(word, 0, flags | KINDERGARTEN);
+		}
+	}
+	fclose(in);
+}
+
+static void ReadParseWords(char* file)
+{
+	char input_string[MAX_BUFFER_SIZE];
+	char word[MAX_WORD_SIZE];
+	FILE* in = FopenReadNormal(file);
+	if (!in)
+	{
+		Log(STDUSERLOG, "** Missing file RAWDICT/parsewords.txt\r\n");
+		return;
+	}
+	unsigned int parsebit = 0;
+
+	while (fget_input_string(false, false, input_string, in) != 0)
+	{
+		if (input_string[0] == '#' || input_string[0] == 0) continue;
+		char* ptr = input_string;
+		WORDP D;
+		while (ALWAYS)
+		{
+			ptr = ReadWord(ptr, word);
+			if (*word == 0) break;
+			if (*word == ':')
+			{
+				parsebit = (unsigned int)FindParseValueByName(word + 1);
+				if (!parsebit)
+				{
+					Log(STDUSERLOG, "** Missing parsebit %s\r\n", word);
+					return;
+				}
+			}
+			else if (*word == '~') {} // just a header label
+			else
+			{
+				D = StoreWord(word);
+				AddParseBits(D, parsebit);
+			}
+		}
+	}
+	fclose(in);
+}
+
+static void readParticipleVerbs(char* file) // verbs that should be considered adjective participles after linking verb
+{
+	char input_string[MAX_BUFFER_SIZE];
+	char word[MAX_WORD_SIZE];
+	FILE* in = FopenReadNormal(file);
+	if (!in)
+	{
+		Log(STDUSERLOG, "** Missing file %s\r\n", file);
+		return;
+	}
+
+	while (fget_input_string(false, false, input_string, in) != 0)
+	{
+		char* ptr = input_string;
+		ptr = ReadWord(ptr, word);    //   the verb
+		if (!*word || *word == '#') continue;
+		StoreWord(word, 0, COMMON_PARTICIPLE_VERB); // leave implied its verb status and adjective status so it can work it out on its own
+	}
+	fclose(in);
+}
+
+static void readNounNoDeterminer(char* file)
+{
+	char input_string[MAX_BUFFER_SIZE];
+	char word[MAX_WORD_SIZE];
+	FILE* in = FopenReadNormal(file);
+	if (!in)
+	{
+		Log(STDUSERLOG, "** Missing file %s\r\n", file);
+		return;
+	}
+
+	while (fget_input_string(false, false, input_string, in) != 0)
+	{
+		if (input_string[0] == '#' || input_string[0] == 0) continue;
+		char* ptr = input_string;
+		while (ALWAYS)
+		{
+			ptr = ReadWord(ptr, word);    //   the noun
+			if (*word == 0) break;
+			WORDP D = FindWord(word, 0, PRIMARY_CASE_ALLOWED);
+			if (!D) continue;
+			if (!(D->properties & (NOUN_SINGULAR | NOUN_PROPER_SINGULAR))) continue;
+			size_t len = strlen(word);
+			if (D->properties & VERB && word[len - 1] == 'g' && word[len - 2] == 'n' && word[len - 3] == 'i') continue;	// skip gerunds
+			AddSystemFlag(D, NOUN_NODETERMINER);
+		}
+	}
+	fclose(in);
+}
+
+static void readMonths(char* file)
+{
+	char input_string[MAX_BUFFER_SIZE];
+	char word[MAX_WORD_SIZE];
+	FILE* in = FopenReadNormal(file);
+	if (!in)
+	{
+		Log(STDUSERLOG, "** Missing file %s\r\n", file);
+		return;
+	}
+
+	while (fget_input_string(false, false, input_string, in) != 0)
+	{
+		if (input_string[0] == '#' || input_string[0] == 0) continue;
+		char* ptr = input_string;
+		while (ALWAYS)
+		{
+			ptr = ReadWord(ptr, word);    //   the month
+			if (*word == 0) break;
+			WORDP D = FindWord(word, 0, PRIMARY_CASE_ALLOWED);
+			if (!D) continue;
+			AddSystemFlag(D, MONTH);
+		}
+	}
+	fclose(in);
+}
+
+static void readFirstNames(char* file) //   human sexed first names
+{
+	char input_string[MAX_BUFFER_SIZE];
+	char word[MAX_WORD_SIZE];
+	FILE* in = FopenReadNormal(file);
+	if (!in)
+	{
+		Log(STDUSERLOG, "** Missing file %s\r\n", file);
+		return;
+	}
+
+	while (fget_input_string(false, false, input_string, in) != 0)
+	{
+		if (input_string[0] == '#' || input_string[0] == 0) continue;
+		char* ptr = input_string;
+		char sex[MAX_WORD_SIZE];
+		ptr = ReadWord(ptr, word);    //   the name
+		if (*word == 0 || *word == '#') break;
+		ptr = ReadWord(ptr, sex);    //   the sex M or F
+		if (*sex != 'M' && *sex != 'F') continue; //   bad name
+		*word = toUppercaseData[(unsigned char)*word];
+		WORDP D = FindWord(word, 0, LOWERCASE_LOOKUP);
+		if (D && D->properties & PART_OF_SPEECH)
+		{
+			if (D->systemFlags & AGE_LEARNED)
+			{
+				Log(STDUSERLOG, "first name already has common lower meaning %s, ignored\r\n", word);
+				continue;
+			}
+		}
+		uint64 flag = (*sex == 'F' || *sex == 'f') ? NOUN_SHE : NOUN_HE;
+		D = StoreWord(word, NOUN_HUMAN | NOUN | NOUN_FIRSTNAME | NOUN_PROPER_SINGULAR | flag);
+		D->meanings = 0; // DONT live with any meanings like Jesus or John or whatever
+		if ((D->properties & (NOUN_HE | NOUN_SHE)) == (NOUN_HE | NOUN_SHE))
+			Log(STDUSERLOG, "dual sex1 %s\r\n", D->word);
+	}
+	fclose(in);
+}
+
+static void readReducedFirstNames(char* file) //   human sexed first names
+{
+	char input_string[MAX_BUFFER_SIZE];
+	char word[MAX_WORD_SIZE];
+	char male[MAX_WORD_SIZE];
+	char female[MAX_WORD_SIZE];
+	FILE* in = FopenReadNormal(file);
+	if (!in)
+	{
+		Log(STDUSERLOG, "** Missing file %s\r\n", file);
+		return;
+	}
+
+	while (fget_input_string(false, false, input_string, in) != 0)
+	{
+		if (input_string[0] == '#' || input_string[0] == 0) continue;
+		char* ptr = input_string;
+		ptr = ReadWord(ptr, word);    //   the rank
+		if (*word == 0 || *word == '#') break;
+		ptr = ReadWord(ptr, male);
+		ptr = ReadWord(ptr, female);
+		WORDP D = FindWord(male);
+		if (D && D->properties & (NOUN_HE | NOUN_SHE)) { ; }
+		else
+		{
+			WORDP D = StoreWord(male, NOUN_HUMAN | NOUN | NOUN_FIRSTNAME | NOUN_PROPER_SINGULAR | NOUN_HE);
+			if ((D->properties & (NOUN_HE | NOUN_SHE)) == (NOUN_HE | NOUN_SHE))
+				Log(STDUSERLOG, "dual sex2 %s\r\n", D->word);
+		}
+		// if already noun he or she, ignore - Linkparser and normal names are more reliable than reducedNames list
+		D = FindWord(female);
+		if (D && D->properties & (NOUN_HE | NOUN_SHE)) { ; }
+		else
+		{
+			D = StoreWord(female, NOUN_HUMAN | NOUN | NOUN_FIRSTNAME | NOUN_PROPER_SINGULAR | NOUN_SHE);
+			if ((D->properties & (NOUN_HE | NOUN_SHE)) == (NOUN_HE | NOUN_SHE))
+				Log(STDUSERLOG, "dual sex3 %s\r\n", D->word);
+		}
+		AddSystemFlag(D, KINDERGARTEN);
+	}
+	fclose(in);
+}
+
+static void readNames(char* file, uint64 flag, uint64 sys)
+{
+	//   note dictionary words that are proper names are already marked NOUN_PROPER
+	//   AND humans are marked NOUN_HUMAN... Now we may change to having sexed name instead of neutral name
+	char input_string[MAX_BUFFER_SIZE];
+	char word[MAX_WORD_SIZE];
+	FILE* in = FopenReadNormal(file);
+	if (!in)
+	{
+		Log(STDUSERLOG, "** Missing file %s\r\n", file);
+		return;
+	}
+
+	while (fget_input_string(false, false, input_string, in) != 0)
+	{
+		if (input_string[0] == '#' || input_string[0] == 0) continue;
+		char* ptr = input_string;
+		while (ALWAYS)
+		{
+			ptr = ReadWord(ptr, word);    //   the name
+			if (*word == 0 || *word == '#') break;
+			if (IsLowerCase(*word)) *word -= 'a' - 'A';  //   Make 1st letter upper case if its not
+			size_t len = strlen(word);
+			if (word[len - 2] == '.') word[len - 2] = 0;   //   remove lp's .m or .f  or  .b labelling
+			WORDP D = FindWord(word, 0, LOWERCASE_LOOKUP);
+			if (D && D->properties & PART_OF_SPEECH)
+			{
+				if (D->systemFlags & AGE_LEARNED)
+				{
+					Log(STDUSERLOG, "Name already has common lower meaning %s, ignored\r\n", word);
+					continue;
+				}
+			}
+			D = StoreWord(word, flag, sys);
+			D->meanings = 0;	// remove all definitions
+			AddProperty(D, NOUN_PROPER_SINGULAR);
+			if ((D->properties & (NOUN_HE | NOUN_SHE)) == (NOUN_HE | NOUN_SHE))
+			{
+				Log(STDUSERLOG, "dual sex4 %s\r\n", D->word);
+				D->properties ^= NOUN_HE | NOUN_SHE; // unknown sex
+			}
+		}
+	}
+	fclose(in);
+}
+
+static void readNonWords(char* file)
+{
+	//   RIP OUT THESE WORDS
+	char input_string[MAX_BUFFER_SIZE];
+	char word[MAX_WORD_SIZE];
+	FILE* in = FopenReadNormal(file);
+	if (!in)
+	{
+		Log(STDUSERLOG, "** Missing file %s\r\n", file);
+		return;
+	}
+
+	while (fget_input_string(false, false, input_string, in) != 0)
+	{
+		if (input_string[0] == '#' || input_string[0] == 0) continue;
+		char* ptr = input_string;
+		ptr = ReadWord(ptr, word);    //   the name
+		if (*word == 0) continue;
+
+		WORDP D = FindWord(word, 0, PRIMARY_CASE_ALLOWED);
+		if (!D) continue;
+		D->properties = 0;
+	}
+	fclose(in);
+}
+
+static void readNonNames(char* file)
+{
+	//   these words should NOT be treated as proper names
+	char input_string[MAX_BUFFER_SIZE];
+	char word[MAX_WORD_SIZE];
+	FILE* in = FopenReadNormal(file);
+	if (!in)
+	{
+		Log(STDUSERLOG, "** Missing file %s\r\n", file);
+		return;
+	}
+
+	while (fget_input_string(false, false, input_string, in) != 0)
+	{
+		if (input_string[0] == '#' || input_string[0] == 0) continue;
+		char* ptr = input_string;
+		ptr = ReadWord(ptr, word);    //   the name
+		if (*word == 0) continue;
+
+		WORDP D = FindWord(word, 0, UPPERCASE_LOOKUP);
+		if (!D) continue;
+		RemoveProperty(D, NOUN_PROPER_SINGULAR | NOUN_PROPER_PLURAL | NOUN_HUMAN | NOUN_FIRSTNAME | NOUN_HE | NOUN_SHE | NOUN);
+		AddInternalFlag(D, DELETED_MARK);
+	}
+	fclose(in);
+}
+
+static void RemoveSynSet(MEANING T)
+{
+	WORDP D = Meaning2Word(T);
+	if (!D->meanings) return;	// no synsets anyway
+	unsigned int index = Meaning2Index(T);
+	unsigned int restriction = T & TYPE_RESTRICTION;
+	if (index == 0)// remove all meanings
+	{
+		unsigned int limit = GetMeaningCount(D);
+		for (unsigned int i = limit; i >= 1; --i)
+		{
+			T = MakeMeaning(D, i);
+			MEANING master = GetMeaning(D, i);
+			if (!master) continue; //   already removed
+			if (restriction && (master & restriction) == 0) continue;	 // not part of our limit
+			FACT* F = FindFact(T, Mis, master); // from normal word to synset head
+			if (F) KillFact(F);
+			RemoveMeaning(T, master);
+		}
+		return;
+	}
+
+	MEANING master = GetMeaning(D, index);
+	if (!master) return; //   already removed
+	WORDP S = Meaning2Word(master);
+	if (S == D) // self ptr
+	{
+		if (GetMeaningCount(D)) Log(STDUSERLOG, "Cannot remove, we are master meaning %s\r\n", D->word);
+		else AddInternalFlag(D, DELETED_MARK);
+		return;
+	}
+	FACT* F = FindFact(T, Mis, master); // from normal word to synset head
+	if (F) KillFact(F);
+	RemoveMeaning(T, master);
+}
+
+static void readNonPos(char* file)
+{
+	//   these words should NOT be treated as pos listed
+	char input_string[MAX_BUFFER_SIZE];
+	char word[MAX_WORD_SIZE];
+	char pos[MAX_WORD_SIZE];
+	FILE* in = FopenReadNormal(file);
+	if (!in)
+	{
+		Log(STDUSERLOG, "** Missing file %s\r\n", file);
+		return;
+	}
+
+	while (fget_input_string(false, false, input_string, in) != 0)
+	{
+		if (input_string[0] == '#' || input_string[0] == 0) continue;
+		char* ptr = input_string;
+		ptr = ReadWord(ptr, word);    //   the word
+		if (*word == 0) continue;
+		WORDP D = FindWord(word, 0, PRIMARY_CASE_ALLOWED);
+		if (!D) continue;
+
+		while (ALWAYS)
+		{
+			ptr = ReadCompiledWord(ptr, pos);
+			if (!*pos) break;
+
+			//   remove wholesale
+			uint64 flags = 0;
+			uint64 sysflags = 0;
+			// wholesale removal
+			if (!stricmp(pos, "NOUN")) flags = NOUN | NOUN_BITS | NOUN_PROPERTIES;
+			else if (!stricmp(pos, "PREPOSITION")) flags = PREPOSITION;
+			else if (!stricmp(pos, "VERB"))
+			{
+				flags = VERB | VERB_BITS | VERB_PROPERTIES;
+				sysflags = VERB_SYSTEM_PROPERTIES;
+			}
+			else if (!stricmp(pos, "ADJECTIVE"))
+			{
+				flags = ADJECTIVE | ADJECTIVE_BITS | MORE_FORM | MOST_FORM;
+				sysflags = ADJECTIVE_POSTPOSITIVE;
+			}
+			else if (!stricmp(pos, "ADVERB"))
+			{
+				flags = ADVERB | MORE_FORM | MOST_FORM;
+				sysflags = 0;
+			}
+			else // remove individual flag
+			{
+				flags = FindValueByName(pos);
+				if (!flags)
+				{
+					sysflags = FindSystemValueByName(pos);
+					if (!sysflags) ReportBug("No such flag %s to remove from %s\r\n", pos, D->word);
+				}
+				RemoveProperty(D, flags);
+				RemoveSystemFlag(D, sysflags);
+				continue; // take away no meanings
+			}
+
+			RemoveProperty(D, flags);
+			RemoveSystemFlag(D, sysflags);
+
+			//   remove meanings
+			for (int j = 1; j <= GetMeaningCount(D); ++j)
+			{
+				MEANING T = GetMeaning(D, j); //   the synset master
+				if (!T) continue;
+				WORDP E = Meaning2Word(T);
+				if (!(E->internalBits & WORDNET_ID)) continue;	//   never remove self ptrs
+				if (!(E->properties & flags)) continue;	//   not correct type
+				RemoveSynSet(MakeMeaning(D, j)); //   remove this meaning
+				j = 0; //   retry them again
+			}
+		}
+	}
+	fclose(in);
+}
+
+static void readOnomatopoeia(char* file)
+{//   sounds made by x 
+	char input_string[MAX_BUFFER_SIZE];
+	char word[MAX_WORD_SIZE];
+	FILE* in = FopenReadNormal(file);
+	if (!in)
+	{
+		Log(STDUSERLOG, "** Missing file %s\r\n", file);
+		return;
+	}
+
+	currentFileLine = 0;
+	while (fget_input_string(false, false, input_string, in) != 0)
+	{
+		if (input_string[0] == '#' || input_string[0] == 0) continue;
+		char* ptr = input_string;
+		ptr = ReadWord(ptr, word);    //   the name
+		if (*word == 0) continue;
+		StoreWord(word, NOUN | NOUN_SINGULAR);
+		while (ALWAYS)
+		{
+			ptr = ReadWord(ptr, word);
+			if (!*word) break;
+			StoreWord(word, NOUN | NOUN_SINGULAR);
+			//   bug assign relationship
+		}
+	}
+	fclose(in);
+}
+
+static void SetHelper(char* word, uint64 flags)
+{
+	WORDP D = StoreWord(word, 0);
+	RemoveProperty(D, VERB_BITS | VERB | AUX_VERB | VERB_INFINITIVE);	// we will set all that are required
+	AddProperty(D, flags);
+	AddSystemFlag(D, KINDERGARTEN);
+	if (flags & VERB) AddTypedMeaning(D, VERB); // need a meaning entry to preserve VERB attributes
+}
+
+static void readIrregularVerbs(char* file)
+{ //   format is present past past  optional-present-participle
+	char input_string[MAX_BUFFER_SIZE];
+	char word[MAX_WORD_SIZE];
+	FILE* in = FopenReadNormal(file);
+	if (!in)
+	{
+		Log(STDUSERLOG, "** Missing file %s\r\n", file);
+		return;
+	}
+	WORDP be = StoreWord("be");
+	WORDP n = StoreWord("am");
+	AddCircularEntry(be, TENSEFIELD, n);
+	n = StoreWord("are");
+	AddCircularEntry(be, TENSEFIELD, n);
+	n = StoreWord("is");
+	AddCircularEntry(be, TENSEFIELD, n);
+	n = StoreWord("being");
+	AddCircularEntry(be, TENSEFIELD, n);
+	n = StoreWord("been");
+	AddCircularEntry(be, TENSEFIELD, n);
+	n = StoreWord("was");
+	AddCircularEntry(be, TENSEFIELD, n);
+	n = StoreWord("were");
+	AddCircularEntry(be, TENSEFIELD, n);
+
+	while (ReadALine(input_string, in) >= 0)
+	{
+		if (input_string[0] == '#' || input_string[0] == 0) continue;
+		char* ptr = input_string;
+
+		//   present tense
+		ptr = ReadWord(ptr, word);
+		if (*word == 0) continue;
+		WORDP mainverb = StoreWord(word, VERB);
+		RemoveProperty(mainverb, VERB_BITS | VERB_INFINITIVE);
+		AddProperty(mainverb, VERB_INFINITIVE);
+		if (stricmp(word, "be")) AddProperty(mainverb, VERB_PRESENT); // "be" is not a present tense
+		ptr = SkipWhitespace(ptr);
+		WORDP D;
+		while (*ptr == '/')  //   alternate presents
+		{
+			ptr += 2;
+			ptr = ReadWord(ptr, word);
+			D = StoreWord(word, VERB | VERB_PRESENT_3PS);
+			AddCircularEntry(mainverb, TENSEFIELD, D);
+			ptr = SkipWhitespace(ptr);
+		}
+
+		//   past tense
+		ptr = ReadWord(ptr, word);
+		D = StoreWord(word, VERB);
+		AddProperty(D, VERB_PAST);
+		AddCircularEntry(mainverb, TENSEFIELD, D);
+		ptr = SkipWhitespace(ptr);
+		while (*ptr == '/')  //   alternate simple past
+		{
+			ptr += 2;
+			ptr = ReadWord(ptr, word);    //   the past tense
+			D = StoreWord(word, VERB | VERB_PAST);
+			AddCircularEntry(mainverb, TENSEFIELD, D);
+			ptr = SkipWhitespace(ptr);
+		}
+
+		//   past participle
+		ptr = ReadWord(ptr, word);
+		if (!*word)
+		{
+			Log(STDUSERLOG, "Missing required past participle %s\r\n", mainverb->word);
+			continue;
+		}
+		D = StoreWord(word, VERB | VERB_PAST_PARTICIPLE | ADJECTIVE | ADJECTIVE_PARTICIPLE);
+		if (!stricmp(word, "had")) RemoveProperty(D, ADJECTIVE | ADJECTIVE_PARTICIPLE); // had will never be but "the children *having food" might be
+		AddCircularEntry(mainverb, TENSEFIELD, D);
+		ptr = SkipWhitespace(ptr);
+		while (*ptr == '/')  //   alternate full past
+		{
+			ptr += 2;
+			ptr = ReadWord(ptr, word);    //   the past tense
+			D = StoreWord(word, VERB | VERB_PAST_PARTICIPLE);
+			AddCircularEntry(mainverb, TENSEFIELD, D);
+			ptr = SkipWhitespace(ptr);
+		}
+
+		//   present participle (optional)
+		ptr = ReadWord(ptr, word);
+		if (!*word) continue;      //   optional present participle not given
+		D = StoreWord(word, VERB | VERB_PRESENT_PARTICIPLE | ADJECTIVE | ADJECTIVE_PARTICIPLE);
+		AddCircularEntry(mainverb, TENSEFIELD, D);
+	}
+	fclose(in);
+}
+
+static void readIrregularNouns(char* file)
+{
+	char input_string[MAX_BUFFER_SIZE];
+	char word[MAX_WORD_SIZE];
+	FILE* in = FopenReadNormal(file);
+	if (!in)
+	{
+		Log(STDUSERLOG, "** Missing file %s\r\n", file);
+		return;
+	}
+
+	while (fget_input_string(false, false, input_string, in) != 0)
+	{
+		if (input_string[0] == '#' || input_string[0] == 0) continue;
+		char* ptr = input_string;
+		ptr = ReadWord(ptr, word);    //   the singular
+		if (*word == 0) continue;
+		WORDP singular = StoreWord(word, NOUN);
+		AddProperty(singular, (singular->internalBits & UPPERCASE_HASH) ? NOUN_PROPER_SINGULAR : NOUN_SINGULAR);
+		//   GetPlural will map a plural to its singular form and a singular to one of its plurals (there may be multiple plural forms)
+
+		while (*ptr) //   read all plurals
+		{
+			ptr = ReadWord(ptr, word);    //   a  plural
+			if (!*word) break;
+			WORDP D = StoreWord(word, NOUN);
+			AddProperty(D, (D->internalBits & UPPERCASE_HASH) ? NOUN_PROPER_PLURAL : NOUN_PLURAL);
+			if (stricmp(D->word, singular->word))    //   not same word
+			{
+				WORDP plural = FindCircularEntry(singular, NOUN_PLURAL | NOUN_PROPER_PLURAL);
+				if (plural) Log(STDUSERLOG, "plural->S collision %s\r\n", plural->word);
+				else  AddCircularEntry(singular, PLURALFIELD, D);
+			}
+		}
+	}
+	fclose(in);
+}
+
+static void readIrregularAdverbs(char* file)
+{
+	char input_string[MAX_BUFFER_SIZE];
+	char word[MAX_WORD_SIZE];
+	FILE* in = FopenReadNormal(file);
+	if (!in)
+	{
+		Log(STDUSERLOG, "** Missing file %s\r\n", file);
+		return;
+	}
+
+	while (fget_input_string(false, false, input_string, in) != 0)
+	{
+		if (input_string[0] == '#' || input_string[0] == 0) continue;
+		char* ptr = input_string;
+		ptr = ReadWord(ptr, word);    //   the basic
+		if (*word == 0) continue;
+		WORDP basic = StoreWord(word, ADVERB | ADVERB);
+		RemoveProperty(basic, MORE_FORM | MOST_FORM);
+		bool adjective = false;
+		if (basic->properties & ADJECTIVE) adjective = true;
+
+		ptr = ReadWord(ptr, word);    //   a  more
+		WORDP more = StoreWord(word, ADVERB | ADVERB);
+		RemoveProperty(more, MORE_FORM | MOST_FORM);
+		AddProperty(more, MORE_FORM);
+
+		ptr = ReadWord(ptr, word);    //   a  most
+		WORDP most = StoreWord(word, ADVERB | ADVERB);
+		RemoveProperty(most, MORE_FORM | MOST_FORM);
+		AddProperty(most, MOST_FORM);
+
+		AddCircularEntry(basic, COMPARISONFIELD, more);
+		AddCircularEntry(basic, COMPARISONFIELD, most);
+	}
+	fclose(in);
+}
+
+static void readWordByAge(char* file, uint64 grade)
+{
+	char input_string[MAX_BUFFER_SIZE];
+	char word[MAX_WORD_SIZE];
+	FILE* in = FopenReadNormal(file);
+	if (!in)
+	{
+		Log(STDUSERLOG, "** Missing file %s\r\n", file);
+		return;
+	}
+
+	while (fget_input_string(false, false, input_string, in) != 0)
+	{
+		if (input_string[0] == '#' || input_string[0] == 0) continue;
+		char* ptr = input_string;
+		ptr = ReadWord(ptr, word);    //   the name
+		if (*word == 0) continue;
+		size_t len = strlen(word);
+		WORDP D = FindWord(word, len, PRIMARY_CASE_ALLOWED);
+		if (!D)
+		{
+			char* item = FindCanonical(word, len);
+			if (item) D = FindWord(item, 0, PRIMARY_CASE_ALLOWED);
+		}
+		if (D && !(D->properties & PART_OF_SPEECH))
+			D = NULL;
+
+		//   we know it now
+		if (!D)
+		{
+			Log(STDUSERLOG, "   never heard of this word %s\r\n", word);
+			D = StoreWord(word, 0);
+		}
+		if (D->systemFlags & AGE_LEARNED) continue;  //   already know this word younger
+		if (IsNumber(D->word) && IsPlaceNumber(D->word))
+		{
+			AddProperty(D, ADJECTIVE | ADJECTIVE_NUMBER);
+			AddSystemFlag(D, ORDINAL);
+			AddParseBits(D, QUANTITY_NOUN);
+		}
+		AddSystemFlag(D, grade);
+
+		char* item = FindCanonical(D->word, 2);
+		WORDP X;
+		if (item) X = FindWord(item, 0, PRIMARY_CASE_ALLOWED);
+		if (!X) continue;
+
+		// propogate to all related forms
+		WORDP E = GetComparison(X); //  adj/adv
+		while (E && E != X)
+		{
+			AddSystemFlag(E, grade);
+			Log(STDUSERLOG, "%s compare %s\r\n", E->word, X->word);
+			WORDP O = E;
+			E = GetComparison(E);
+			if (O == E)
+				break;
+		}
+		E = GetTense(X); // verb
+		while (E && E != X)
+		{
+			AddSystemFlag(E, grade);
+			Log(STDUSERLOG, "%s tense %s\r\n", E->word, X->word);
+			WORDP O = E;
+			E = GetTense(E);
+			if (O == E)
+				break;
+		}
+		E = GetPlural(X); // noun
+		while (E && E != X)
+		{
+			AddSystemFlag(E, grade);
+			Log(STDUSERLOG, "%s plural %s\r\n", E->word, X->word);
+			WORDP O = E;
+			E = GetPlural(E);
+			if (O == E)
+				break;
+		}
+	}
+	fclose(in);
+}
+
+static void ReadSexed(char* file, uint64 properties)
+{ //   format is canonical word then all words that map to it (except WORDNET_ID uses it for other things)
+	char word[MAX_WORD_SIZE];
+	FILE* in = FopenReadNormal(file);
+	if (!in)
+	{
+		Log(STDUSERLOG, "** Missing file %s\r\n", file);
+		return;
+	}
+
+	while (ReadALine(readBuffer, in) >= 0)
+	{
+		if (readBuffer[0] == '#' || readBuffer[0] == 0) continue;
+		ReadWord(readBuffer, word);
+		if (*word == 0 || *word == '#') continue;
+		if (properties & NOUN_THEY && IsUpperCase(*word)) continue;	//   dont do names of groups
+		WORDP D = StoreWord(word, properties);
+		AddSystemFlag(D, KINDERGARTEN);
+	}
+	fclose(in);
+}
+
+static char* EatQuotedWord(char* ptr, char* spot) //   contiguous mass of characters
+{
+	char* start = spot;
+	if (!ptr || *ptr == 0)
+	{
+		*spot = 0;
+		return 0;
+	}
+	while (*ptr && (*ptr == ' ' || *ptr == '\t')) ++ptr;  //   skip preceeding blanks
+	while (*ptr != ' ' &&  *ptr != '\t' && *ptr != '\r' && *ptr != '\n' && *ptr != 0)
+	{
+		if ((*ptr == ')' || *ptr == ']') && spot != start) break;		//   end of a list
+		char c = *ptr++;
+		*spot++ = c;  //   put char into word
+		if (c == '(' || c == '[') break;
+		if (c == '"') //   grab whole string 
+		{
+			char* hold = ptr;
+			--ptr;
+			while (*++ptr != '"' && *ptr)
+			{
+				*spot++ = *ptr; //   grab all in quotes
+			}
+			if (*ptr != '"') //   single double quote??
+			{
+				ptr = hold;
+			}
+			else
+			{
+				*spot++ = *ptr; //   put in tail ending quote (or eol)
+				if (*ptr) ++ptr;//   move off the ""
+			}
+		}
+	}
+	*spot = 0;
+	if (start[0] == '"' && start[1] == '"' && start[2] == 0) *start = 0;   //   NULL STRING
+	return ptr;
+}
+
+void ReadTriple(char* file)
+{
+	FILE* in = FopenReadNormal(file);
+	if (!in)
+	{
+		Log(STDUSERLOG, "** Missing file %s\r\n", file);
+		return;
+	}
+
+	while (fget_input_string(false, false, readBuffer, in))
+	{
+		if (*readBuffer == 0 || *readBuffer == '#') continue;
+		char* ptr = readBuffer;
+
+		char word[MAX_WORD_SIZE];
+		MEANING subject = 0;
+		MEANING verb = 0;
+		MEANING object = 0;
+		char subjectname[MAX_WORD_SIZE];
+		ptr = EatQuotedWord(ptr, subjectname);
+		if (!*subjectname) continue; //   unless it is the null fact
+		strcpy(subjectname, JoinWords(BurstWord(subjectname), false)); //   a composite word
+		subject = ReadMeaning(subjectname);
+
+		ptr = ReadWord(ptr, word);
+		MakeLowerCase(word); //   all verbs are lower case
+		verb = MakeMeaning(StoreWord(word));
+
+		char objectname[MAX_WORD_SIZE];
+		ptr = EatQuotedWord(ptr, objectname);
+		strcpy(objectname, JoinWords(BurstWord(objectname), false)); //   a composite word
+		object = ReadMeaning(objectname);
+
+		CreateFact(subject, verb, object);
+	}
+	fclose(in);
+}
+
+static FACT* UpLink(MEANING M)
+{
+	M &= -1 ^ (TYPE_RESTRICTION | SYNSET_MARKER);
+	WORDP D = Meaning2Word(M);
+	FACT* F = GetSubjectHead(D);
+	while (F)
+	{
+		if (F->subject == M && F->verb == Mis) return F;
+		F = GetSubjectNext(F);
+	}
+	return NULL;
+}
+
+static void PostFixNumber(WORDP D, uint64 junk)
+{
+	if (D->properties & NOUN_NUMBER)  RemoveProperty(D, NOUN_SINGULAR);
+}
+
+static void VerifyDictEntry(WORDP D, uint64 junk)
+{
+	if (*D->word == '_' && D->internalBits & RENAMED) return; // rename
+	uint64 pos = D->properties;
+	if (!IsAlphaUTF8(*D->word) && !(D->internalBits & UTF8)) //   abnormal word (maybe wordnet synset header)   but could be 60_minutes or simple punctuation or whatever
+	{
+		size_t len = strlen(D->word);
+		if (!IsAlphaUTF8(D->word[len - 1])) return;	 // has no alpha in it
+	}
+
+	// if some meanings have been removed, adjust flags
+	uint64 flags = 0;
+	uint64 removeFlag = 0;
+	bool removed = false;
+	// NOTE-- if SOMETHING gets removed, then meanings added without a master can also be deleted again 
+	for (int i = 1; i <= GetMeaningCount(D); ++i)
+	{
+		MEANING master = GetMeaning(D, i);
+		if (!master) removed = true;
+		else flags |= master & TYPE_RESTRICTION; // what are LEGAL values
+	}
+	if (removed)
+	{
+		if (!(flags & VERB) && !GetTense(D)) RemoveProperty(D, VERB);
+		if (!(flags & ADJECTIVE)) RemoveProperty(D, ADJECTIVE);
+		if (!(flags & NOUN) && !GetPlural(D) && !(pos & (NOUN_FIRSTNAME | NOUN_HUMAN | NOUN_HE | NOUN_SHE | NOUN_THEY | NOUN_TITLE_OF_ADDRESS))) RemoveProperty(D, NOUN); // if we removed meanings, remove the noun bit IF not a name
+		if (!(flags & ADVERB)) RemoveProperty(D, ADVERB);
+	}
+	if (D->properties & NOUN && !(D->properties & NOUN_BITS)) RemoveProperty(D, NOUN);
+	if (D->properties & VERB && !(D->properties & VERB_BITS)) RemoveProperty(D, VERB);
+	if (D->properties & ADJECTIVE && !(D->properties & ADJECTIVE_BITS)) RemoveProperty(D, ADJECTIVE_BITS);
+
+	if (!(D->properties & NOUN)) RemoveProperty(D, NOUN_PROPERTIES);
+	if (!(D->properties & VERB))
+	{
+		RemoveSystemFlag(D, VERB_CONJUGATE1 | VERB_CONJUGATE2 | VERB_CONJUGATE3 | VERB_DIRECTOBJECT | VERB_INDIRECTOBJECT | VERB_TAKES_ADJECTIVE);
+		RemoveProperty(D, VERB_INFINITIVE | VERB_PRESENT | VERB_PRESENT_3PS | VERB_PRESENT_PARTICIPLE);
+		if (D->properties & VERB_PAST) AddProperty(D, VERB);	// felt is past tense, unrelated to verb to felt
+	}
+	if (!(D->properties & ADJECTIVE)) RemoveProperty(D, ADJECTIVE_BITS);
+
+	int validMeanings = 0;
+	for (int j = 1; j <= GetMeaningCount(D); ++j) if (GetMeaning(D, j)) ++validMeanings;
+	if (validMeanings == 0 && !GetSubstitute(D) && !GetComparison(D) && !GetTense(D) && !GetPlural(D) && !D->properties && !D->systemFlags && !GETMULTIWORDHEADER(D)) // has no accepted meanings or utility
+	{
+		AddInternalFlag(D, DELETED_MARK);
+		return;
+	}
+
+	if (D->properties & ADJECTIVE)
+	{   //   Irregular ones form a loop, regular ones that JUST happen to have entries in the other forms are merely marked for their form.
+
+		if ((GetComparison(D)) == D) Log(STDUSERLOG, "Self looping adjective %s\r\n", D->word);
+		if (GetComparison(D))
+		{
+			if (D->properties & MORE_FORM) //   check other two
+			{
+				WORDP compare = GetComparison(D);
+				if (!compare) Log(STDUSERLOG, "Adjective %s lacks MOST form\r\n", D->word);
+				else
+				{
+					if (!GetAdjectiveBase(D->word, false)) Log(STDUSERLOG, "Adjective %s lacks base form\r\n", D->word);
+				}
+			}
+			else if (D->properties & MOST_FORM) //   its most, check other 2
+			{
+				WORDP compare = GetComparison(D); //   on to base form
+				if (!compare) Log(STDUSERLOG, "Adjective %s lacks base\r\n", D->word);
+				else //   has something, is it a base
+				{
+					if (!GetAdjectiveBase(D->word, false)) Log(STDUSERLOG, "Adjective %s lacks base form\r\n", D->word);
+				}
+			}
+		}
+	}
+
+	if (D->properties & NOUN)
+	{
+		// dead noun with no other value (like "am" has verb value)
+		if (GetMeaningCount(D) == 0 && (IsLowerCase(D->word[0]) && IsLowerCase(D->word[1]))) // a lower case standin from the index for an upper case word
+		{
+			WORDP E = FindWord(D->word, 0, UPPERCASE_LOOKUP);
+			if (E && !(E->internalBits & DELETED_MARK) && !(D->properties & (VERB | ADVERB | ADJECTIVE))) // has an upper case equivalent and no OTHER meanings
+			{
+				if (!GetPlural(D) && !GetMeaningCount(D))
+				{
+					Log(STDUSERLOG, "Lowercase noun has upper value: %s %s \r\n", D->word, E->word);
+					//RemoveProperty(D, ((NOUN_BITS - NOUN_GERUND) | NOUN)); // remove noun ness since is not plural or useful -- asl and katar
+				}
+				if (!(D->properties & PART_OF_SPEECH) && !GetPlural(D) && !GETMULTIWORDHEADER(D)) // no other utility.
+				{
+					AddInternalFlag(D, DELETED_MARK);
+					return;
+				}
+			}
+		}
+
+		// ALLOW words like headquarters to be both singular AND plural, meaning it can use both kinds of verbs
+		//if (D->properties & NOUN_PLURAL && D->properties & NOUN_SINGULAR && IsLowerCase(D->word[0])) // for now dont allow nouns to be multiply singular and plural, since we cant disambiguate well
+		//{
+		//RemoveProperty(D,NOUN_SINGULAR);	// no conflict please, "media" makes a mess in pos tagging
+		//char* word = GetSingularNoun(D->word,false,true);
+		//if ( !word || !stricmp(word,D->word)) // cant find a singular--- so have no plural instead
+		//{
+		//	RemoveProperty(D,NOUN_PLURAL);
+		//	AddProperty(D,NOUN_SINGULAR);
+		//}
+		//}
+
+		char* base = GetSingularNoun(D->word, false, true);
+		if (!base)
+		{
+			Log(STDUSERLOG, "----Missing base singular: %s\r\n", D->word);
+			return;
+		}
+	}
+
+	if (D->properties & VERB)
+	{
+		// if it can be either separated or not, remove both flags as it has no requirement on it
+		if (D->systemFlags & INSEPARABLE_PHRASAL_VERB && D->systemFlags & SEPARABLE_PHRASAL_VERB)
+		{
+			RemoveSystemFlag(D, INSEPARABLE_PHRASAL_VERB | SEPARABLE_PHRASAL_VERB);
+		}
+
+		// any multiword verb must designate its syllable of conjugation - fault it to 1st place 
+		if (strchr(D->word, '_') && !(D->systemFlags & (VERB_CONJUGATE1 | VERB_CONJUGATE2 | VERB_CONJUGATE3))) AddSystemFlag(D, VERB_CONJUGATE1);
+
+		if (D->properties & AUX_VERB) return;   //   DOES not conjugate
+
+												//   EVERYTHING marked as a verb must have complete conjugation
+		char* base = GetInfinitive(D->word, true);
+		if (!base)
+		{
+			if (*D->word != '`') Log(STDUSERLOG, "*****Missing verb infinitive: %s\r\n", D->word); // ignore #define value
+			return;
+		}
+		WORDP B = FindWord(base, 0, PRIMARY_CASE_ALLOWED);
+		char* past = GetPastTense(base);
+		char* inf = (past) ? GetInfinitive(past, true) : NULL;
+		if (!inf || stricmp(inf, base))
+		{
+			Log(STDUSERLOG, "*****Missing verb past or failed to match infinitive: %s %s\r\n", D->word, (inf) ? inf : (char*)" ");
+			return;
+		}
+		char* pastparticiple = GetPastParticiple(base);
+		inf = (pastparticiple) ? GetInfinitive(pastparticiple, true) : NULL;
+		if (!inf || stricmp(inf, base))
+		{
+			Log(STDUSERLOG, "*****Missing verb pastparticiple or failed to match infinitive1: %s\r\n", D->word);
+			return;
+		}
+		char* participle = GetPresentParticiple(base);
+		inf = (pastparticiple) ? GetInfinitive(pastparticiple, true) : NULL;
+		if (!inf || stricmp(inf, base))
+		{
+			Log(STDUSERLOG, "Missing verb presentparticiple  failed to match present participle to infinitive: %s\r\n", D->word);
+			return;
+		}
+	}
+
+	if (pos && !(D->properties & pos) && !(D->systemFlags & CONDITIONAL_IDIOM)) AddInternalFlag(D, DELETED_MARK); // has nothing left to work with
+}
+
+static void ReadDeadSynset(char* name)
+{//   given entry, ISOLATE entry into own synset or kill it entirely
+	FILE* in = FopenReadNormal(name);
+	if (!in)
+	{
+		Log(STDUSERLOG, "** Missing file %s\r\n", name);
+		return;
+	}
+
+	while (ReadALine(readBuffer, in) >= 0)
+	{
+		if (*readBuffer == 0 || *readBuffer == '#') continue;
+		char main[MAX_WORD_SIZE];
+		ReadCompiledWord(readBuffer, main);
+		char* tilde = strchr(main, '~');
+		char* range = (tilde) ? strchr(tilde, '-') : NULL;
+		if (range)
+		{
+			unsigned int start = atoi(tilde + 1);
+			unsigned int end = atoi(range + 1);
+			while (start <= end)
+			{
+				tilde[1] = 0; // truncate to word~
+				sprintf(tilde + 1, "%d", start++);
+				RemoveSynSet(ReadMeaning(main, true));
+			}
+		}
+		else RemoveSynSet(ReadMeaning(main, true));
+	}
+	fclose(in);
+}
+
+static void ReadDeadFacts(char* name) //   kill these WordNet facts
+{
+	FILE* in = FopenReadNormal(name);
+	if (!in)
+	{
+		Log(STDUSERLOG, "** Missing file %s\r\n", name);
+		return;
+	}
+
+	while (ReadALine(readBuffer, in) >= 0)
+	{
+		if (*readBuffer == 0 || *readBuffer == '#') continue;
+		//   facts are direct copies of other facts, are ReadCompiledWord safe
+		char* ptr = readBuffer;
+		FACT* F = ReadFact(ptr, 0);
+		if (F) KillFact(F);
+		else Log(STDUSERLOG, "ReadDeadFacts fact not found: %s\r\n", readBuffer);
+	}
+	fclose(in);
+}
+
+static void DeleteAllWords(WORDP D, uint64 junk)
+{
+	if (GetSubstitute(D)) return;	// dont delete these
+	if (D->properties & (QWORD | PUNCTUATION_BITS | PARTICLE | INTERJECTION | THERE_EXISTENTIAL | TO_INFINITIVE)) return;
+	if (D->properties & (DETERMINER_BITS | POSSESSIVE_BITS | CONJUNCTION | AUX_VERB | PRONOUN_BITS)) return;
+
+	if (D->word[0] == '~' && !(D->internalBits & (BUILD1 | BUILD0))) return;//  system concepts alone
+
+	if (IsUpperCase(*D->word)) { ; } // no proper names
+	else if (!(D->systemFlags & (KINDERGARTEN | GRADE1_2 | GRADE3_4 | GRADE5_6))) // delete advanced words unless its irregular and base is vital
+	{
+		char* noun = GetSingularNoun(D->word, false, true);
+		WORDP E = FindWord(noun, LOWERCASE_LOOKUP);
+		if (E && E->systemFlags & (KINDERGARTEN | GRADE1_2 | GRADE3_4 | GRADE5_6)) return; // base is known
+		char* verb = GetInfinitive(D->word, true);
+		E = FindWord(verb, LOWERCASE_LOOKUP);
+		if (E && E->systemFlags & (KINDERGARTEN | GRADE1_2 | GRADE3_4 | GRADE5_6)) return; // base is known
+		char* adjective = GetAdjectiveBase(D->word, true);
+		E = FindWord(adjective, LOWERCASE_LOOKUP);
+		if (E && E->systemFlags & (KINDERGARTEN | GRADE1_2 | GRADE3_4 | GRADE5_6)) return; // base is known
+		char* adverb = GetAdverbBase(D->word, true);
+		E = FindWord(adverb, LOWERCASE_LOOKUP);
+		if (E && E->systemFlags & (KINDERGARTEN | GRADE1_2 | GRADE3_4 | GRADE5_6)) return; // base is known
+	}
+	else if (D->properties & NORMAL_WORD) return;
+	else if (D->properties & NOUN_FIRSTNAME) return;		// keep first names for recognition 
+
+	AddInternalFlag(D, DELETED_MARK);
+}
+
+static void CheckShortFacts()
+{
+	char* name = "TOPIC/BUILD0/facts0.txt";
+	StartFile("TOPIC/BUILD0/facts0.txt");
+	FILE* in = FopenReadWritten(name); //  fact files
+	if (!in)
+	{
+		Log(STDUSERLOG, "** Missing file %s\r\n", name);
+		return;
+	}
+
+	char word[MAX_WORD_SIZE];
+	while (ReadALine(readBuffer, in) >= 0)
+	{
+		ReadCompiledWord(readBuffer, word);
+		if (*word == 0 || *word == '#') continue; //   empty or comment
+		char* ptr = readBuffer;
+		char word[MAX_WORD_SIZE];
+		//   fact may start indented.  Will start with (or be 0 for a null fact
+		ptr = ReadCompiledWord(ptr, word);  //   BUG reconsider spacing need this?
+		if (word[0] == '0') continue;
+		unsigned int flags = 0;
+
+		//   look at subject-- nested fact?
+		char subjectname[MAX_WORD_SIZE];
+		char* s = subjectname;
+		ptr = ReadField(ptr, s, 's', flags);
+		char verbname[MAX_WORD_SIZE];
+		char* v = verbname;
+		ptr = ReadField(ptr, v, 'v', flags);
+		char objectname[MAX_WORD_SIZE];
+		char* o = objectname;
+		ptr = ReadField(ptr, o, 'o', flags);
+		if (!ptr) continue;
+
+		//   handle the flags on the fact
+		uint64 properties = 0;
+		if (!*ptr || *ptr == ')'); //   end of fact
+		else if (*ptr == '0') ptr = ReadHex(ptr, properties);
+		else
+		{
+			char flag[MAX_WORD_SIZE];
+			while (*ptr && *ptr != ')')
+			{
+				ptr = ReadCompiledWord(ptr, flag);
+				properties |= FindValueByName(flag);
+				ptr = SkipWhitespace(ptr);
+			}
+		}
+		flags |= (unsigned int)properties;
+		while (*ptr == ' ') ++ptr;
+		WORDP D;
+		if (!(properties & FACTSUBJECT))
+		{
+			MEANING subject = ReadMeaning(subjectname, true, true);
+			D = Meaning2Word(subject);
+			AddSystemFlag(D, MARKED_WORD);
+			if (D->internalBits & DELETED_MARK && !(D->internalBits & TOPIC))  RemoveInternalFlag(D, DELETED_MARK);
+		}
+		if (!(properties & FACTVERB))
+		{
+			MEANING verb = ReadMeaning(verbname, true, true);
+			D = Meaning2Word(verb);
+			AddSystemFlag(D, MARKED_WORD);
+			if (D->internalBits & DELETED_MARK && !(D->internalBits & TOPIC)) RemoveInternalFlag(D, DELETED_MARK);
+		}
+		if (!(properties & FACTOBJECT))
+		{
+			MEANING object = ReadMeaning(objectname, true, true);
+			D = Meaning2Word(object);
+			AddSystemFlag(D, MARKED_WORD);
+			if (D->internalBits & DELETED_MARK && !(D->internalBits & TOPIC)) RemoveInternalFlag(D, DELETED_MARK);
+		}
+	}
+	fclose(in);
+}
+
+static void CheckShortDictionary(char* name, bool pattern)
+{
+	FILE* in = FopenReadNormal(name);
+	if (!in)
+	{
+		Log(STDUSERLOG, "** Missing file %s\r\n", name);
+		return;
+	}
+
+	while (ReadALine(readBuffer, in) >= 0)
+	{
+		if (*readBuffer == 0 || *readBuffer == '#') continue;
+		//   facts are direct copies of other facts, are ReadCompiledWord safe
+		char word[MAX_WORD_SIZE];
+		char* ptr = ReadWord(readBuffer, word);
+		uint64 flags = 0;
+		char* underscore = strrchr(word + 1, '_'); // find last one in case "Musee_de_la_Citie"
+		bool isUpper = false;
+
+		if (underscore && IsUpperCase(underscore[1]) && (IsUpperCase(word[0]) || IsDigit(word[0]))) isUpper = true;
+		else if (underscore) continue;
+
+		// DONT bring in phrases, they arent needed
+		if (isUpper || (IsUpperCase(word[0]) && word[1])) { flags |= NOUN | NOUN_PROPER_SINGULAR; } // infer it but not for letters 
+
+																									// revive verb base?
+		char* infinitive = GetInfinitive(word, true);
+		if (infinitive)
+		{
+			WORDP X = FindWord(infinitive, 0, PRIMARY_CASE_ALLOWED);
+			if (X && X->properties & VERB)
+			{
+				AddSystemFlag(X, MARKED_WORD);
+				if (X->internalBits & DELETED_MARK) RemoveInternalFlag(X, DELETED_MARK);
+				continue;	// take the base instead
+			}
+		}
+
+		// revive noun base?
+		char* basenoun = GetSingularNoun(word, true, true);
+		if (basenoun)
+		{
+			WORDP X = FindWord(basenoun, 0, PRIMARY_CASE_ALLOWED);
+			if (X && X->properties & NOUN)
+			{
+				AddSystemFlag(X, MARKED_WORD);
+				if (X->internalBits & DELETED_MARK) RemoveInternalFlag(X, DELETED_MARK);
+				continue;	// take the base instead
+			}
+		}
+
+		WORDP D = StoreWord(word, flags); // force it to stay kept
+		AddSystemFlag(D, MARKED_WORD);
+		if (D->internalBits & DELETED_MARK) RemoveInternalFlag(D, DELETED_MARK);
+
+		unsigned int meaningcount = 0;
+		unsigned int glosscount = 0;
+
+		ReadDictionaryFlags(D, ptr, &meaningcount, &glosscount);
+		uint64 bits = D->properties;
+		if (bits == NOUN && !(bits & NOUN_PROPER_SINGULAR)) AddProperty(D, NOUN_SINGULAR);
+		if (bits & VERB && !(bits & VERB_BITS)) AddProperty(D, VERB_INFINITIVE);
+
+		// keep multiword headers
+		unsigned int n = BurstWord(D->word);
+		// force multiword to keep its idiom header
+		if (n != 1 && *word != '~' && *word != '^')  // dont touch concept or function names
+		{
+			char* word = JoinWords(1);
+			WORDP E = FindWord(word, 0, PRIMARY_CASE_ALLOWED);
+			if (!E) ReportBug("idiom header missing")
+			else
+			{
+				AddSystemFlag(E, MARKED_WORD);
+				if (E->internalBits & DELETED_MARK)  RemoveInternalFlag(E, DELETED_MARK);
+			}
+		}
+	}
+	fclose(in);
+}
+
+static bool IsAbstract(FACT* F1, unsigned int depth)
+{
+	WORDP D = Meaning2Word(F1->object);
+	if (!stricmp(D->word, "abstract_entity")) return true;
+	FACT* F = GetSubjectHead(D);
+	while (F)
+	{
+		if (F->subject == F1->object && F->verb == Mis)
+		{
+			return IsAbstract(F, depth + 1);
+		}
+		F = GetSubjectNext(F);
+	}
+	return false;
+}
+
+static void MarkAbstract(WORDP D, uint64 junk)
+{
+	if (D->internalBits & (DELETED_MARK | WORDNET_ID)) return;
+	if (!(D->properties & NOUN)) return;
+
+	// while we are here, change 1920s to plural
+	if (IsDigit(D->word[0]) && D->properties & NOUN_SINGULAR)
+	{
+		size_t len = strlen(D->word);
+		if (D->word[len - 1] == 's')
+		{
+			AddProperty(D, NOUN_PLURAL);
+			RemoveProperty(D, NOUN_SINGULAR);
+		}
+	}
+
+	FACT* F = GetSubjectHead(D);
+	while (F)
+	{
+		if (F->verb == Mis && IsAbstract(F, 0))
+		{
+			AddProperty(D, NOUN_ABSTRACT);
+			return;
+		}
+		F = GetSubjectNext(F);
+	}
+}
+
+static void CleanDead(WORDP D, uint64 junk) // insure all synonym circulars point only to living members and alter up chains
+{
+	if (D->internalBits & (DELETED_MARK | WORDNET_ID)) return;
+	int n = GetMeaningCount(D);
+	if (n == 0) D->w.glosses = NULL;
+	char* wordid = D->word;
+	//   verify meanings lists point to undeleted items in their synset.
+	for (int i = 1; i <= n; ++i)
+	{
+		MEANING M = GetMeaning(D, i);
+		int index = Meaning2Index(M);
+		WORDP X = Meaning2Word(M);
+		if (GetMeaningCount(X) < index)
+			ReportBug("Bad meaning ref in cleandead of %s.%d which points to %s.%d which only has %d\r\n", D->word, i, X->word, index, GetMeaningCount(X));
+		bool seenMarker = (M & SYNSET_MARKER) ? true : false; // we are the synset head and we are not dead
+		bool originalHead = seenMarker; // were we the synset head
+		MEANING synhead = 0;
+		if (X->internalBits & DELETED_MARK) // need to patch around this....
+		{
+			while (X->internalBits & DELETED_MARK) // may end up back on us...
+			{
+				M = GetMeaning(X, index);
+				if (M & SYNSET_MARKER)
+				{
+					if (seenMarker) ReportBug("duplicate synset head?")
+						seenMarker = true; // deleted word was synset header, we must take on that role.
+					synhead = MakeMeaning(X, index) | (M & (BASIC_POS));
+				}
+				index = Meaning2Index(M);
+				X = Meaning2Word(M);
+			}
+			if (X == D) M = MakeMeaning(X, index) | (M & TYPE_RESTRICTION) | SYNSET_MARKER; // we completed the loop, everyone else is dead, make us generic
+			if (seenMarker) M |= SYNSET_MARKER; // replace synset header with us or found unit since synset head is dead
+			GetMeaning(D, i) = M; // use this marker unchanged or changed
+		}
+
+		// seenmarker will be true if we are the synset head that results. our uppath will need to change perhaps. synhead will have been the original head
+
+		if (GetMeaning(D, i) & SYNSET_MARKER) // we are the synset head, adjust our links upward to be dead or not
+		{
+			MEANING M = MakeMeaning(D, i); // correct ptr to use for uplink has no flags on it
+			MEANING base = M;
+			if (synhead) M = synhead;	// the actual facts base for synset was dead
+			FACT* F = NULL;
+			while (ALWAYS)
+			{
+				F = UpLink(M);  // goes up one level from ORIGINAL synset master - all words are already alive or dead marked
+				if (!F) break; // no uplink
+				WORDP X = Meaning2Word(F->object);
+				if (X->internalBits & DELETED_MARK) // fact SHOULD be dead as object certainly is
+				{
+					F->flags |= FACTDEAD;
+				}
+				else break; // valid uplink endpoint found (though link itself may or may not be dead already)
+				M = F->object;	// transfer thru dead link to find valid
+			}
+			if (F && F->subject != base)
+			{
+				F->flags |= FACTDEAD; // last fact from a dead trail
+				CreateFact(base, Mis, F->object); // indirect uplinks all dead, make a direct uplink
+			}
+		}
+	}
+
+	// any word having NOTHING of value must die now
+	if (n == 0 && !D->properties && !GetTense(D) && !GetPlural(D) && !GetComparison(D) && D->word[0] != '~' && D->word[0] != '^' && !(D->systemFlags & (CONDITIONAL_IDIOM | VERB_SYSTEM_PROPERTIES | VERB_PHRASAL_PROPERTIES)))
+	{
+		uint64 flags = D->systemFlags;
+		flags &= -1 ^ (TIMEWORD | GRADE5_6 | GRADE3_4 | GRADE1_2 | KINDERGARTEN);
+		if (!flags) AddInternalFlag(D, DELETED_MARK);
+	}
+}
+
+static void ReviveWords(WORDP D, uint64 junk) // now that dead meaning references have been stripped, check canonicals on the living words and revive some
+{
+	if (D->systemFlags & MARKED_WORD) // we WANT to revive this word if nedded
+	{
+		D->systemFlags ^= MARKED_WORD;
+		RemoveInternalFlag(D, DELETED_MARK);
+	}
+	if (D->internalBits & DELETED_MARK) return;
+	if (GetTense(D))
+	{
+		WORDP E = GetTense(D);
+		while (E && E != D)
+		{
+			if (E->internalBits & DELETED_MARK)
+			{
+				RemoveInternalFlag(E, DELETED_MARK);	// undelete, we need it
+				didSomething = true;
+			}
+			E = GetTense(E);
+		}
+	}
+	if (GetPlural(D))
+	{
+		WORDP E = GetPlural(D);
+		while (E && E != D)
+		{
+			if (E->internalBits & DELETED_MARK)
+			{
+				RemoveInternalFlag(E, DELETED_MARK);	// undelete, we need it
+				didSomething = true;
+			}
+			E = GetPlural(E);
+		}
+	}
+	if (GetComparison(D))
+	{
+		WORDP E = GetComparison(D);
+		while (E && E != D)
+		{
+			if (E->internalBits & DELETED_MARK)
+			{
+				RemoveInternalFlag(E, DELETED_MARK);	// undelete, we need it
+				didSomething = true;
+			}
+			E = GetComparison(E);
+		}
+	}
+}
+
+static void AddShortDict(char* name)
+{
+	FILE* in = FopenReadWritten(name); //  fact files
+	if (!in)
+	{
+		Log(STDUSERLOG, "** Missing file %s\r\n", name);
+		return;
+	}
+	StartFile(name);
+	char word[MAX_WORD_SIZE];
+	WORDP base = dictionaryFree;
+	while (ReadALine(readBuffer, in) >= 0)
+	{
+		ReadCompiledWord(readBuffer, word);
+		if (*word == 0 || *word == '#') continue; //   empty or comment
+		if (*word == '+') //   dictionary entry
+		{
+			char word[MAX_WORD_SIZE];
+			char* at = ReadCompiledWord(readBuffer + 2, word); //   start at valid token past space
+			WORDP D = StoreWord(word, 0);
+			if (D->internalBits & DELETED_MARK) RemoveInternalFlag(D, DELETED_MARK);
+			ReadDictionaryFlags(D, at);
+			AddSystemFlag(D, MARKED_WORD | BUILD0);
+		}
+	}
+	fclose(in);
+
+	if (dictionaryFree == base)
+	{
+		Log(STDUSERLOG, "***** NO dict from topics? %s\r\n", name);
+	}
+}
+
+static void MoveSetsToBase(WORDP D, uint64 junk)
+{
+	if (D->internalBits & CONCEPT) RemoveInternalFlag(D, BUILD0 | BUILD1);	// move concept to base (allow user redefine but build in)
+}
+
+static void ReadForeign()
+{
+	// first get the mapping between foreign pos and english.
+	char name[MAX_WORD_SIZE];
+	sprintf(name, "treetagger/%s_tags.txt", language);
+	if (!ReadForeignPosTags(name)) return; //failed 
+
+	char filename[100];
+	sprintf(filename, "treetagger/%s_rawwords.txt", language);
+	FILE* in = FopenReadOnly(filename);
+	if (!in) return;
+
+	char pos[100];
+	*pos = '_';
+	while (ReadALine(readBuffer, in) >= 0)
+	{
+		char word[MAX_WORD_SIZE];
+		char* ptr = ReadCompiledWord(readBuffer, word); // the base word
+		uint64 flag = 0;
+		while (*ptr)
+		{
+			ptr = ReadCompiledWord(ptr, pos + 1);
+			if (!*pos) break;
+			WORDP P = FindWord(pos);
+			if (P) flag |= P->properties;
+		}
+		StoreWord(word, flag);
+	}
+	fclose(in);
+}
+
+static void ReadEnglish(int mini)
+{
+	//   proper names
+	readNames("RAWDICT/LINKPARSER/entities.locations.sing", NOUN | NOUN_PROPER_SINGULAR, 0);
+	readNames("RAWDICT/lastnames.txt", NOUN | NOUN_PROPER_SINGULAR | NOUN_HUMAN, 0);
+	// before nouns so we can autogender proper names
+	if (mini <= 0) // full dictionary only
+	{
+		readFirstNames("RAWDICT/firstnames.txt");
+		readNames("RAWDICT/LINKPARSER/entities.given-female.sing", NOUN | NOUN_SHE | NOUN_HUMAN | NOUN_FIRSTNAME | NOUN_PROPER_SINGULAR, 0);
+		readNames("RAWDICT/LINKPARSER/entities.given-male.sing", NOUN | NOUN_HE | NOUN_HUMAN | NOUN_FIRSTNAME | NOUN_PROPER_SINGULAR, 0);
+		readNames("RAWDICT/LINKPARSER/entities.given-bisex.sing", NOUN | NOUN_HUMAN | NOUN_FIRSTNAME | NOUN_PROPER_SINGULAR | NOUN_HE | NOUN_SHE, 0);
+	}
+	readReducedFirstNames("RAWDICT/reducedfirstnames.txt");
+
+
+	// ADD WORD LEAST LIKELY TO BE USED FIRST TO IMPROVE DICTIONARY BUCKET LOOKUP
+	if (mini <= 0) 	readSupplementalWord("RAWDICT/foreign.txt", FOREIGN_WORD, 0); // only on a full dictionary
+
+																				  //   noun data
+	printf("reading noun data\r\n");
+	readData("RAWDICT/WORDNET/data.noun"); //   
+	readIndex("RAWDICT/WORDNET/index.noun", 0); //   
+	readIrregularNouns("RAWDICT/noun_irregular.txt");
+	readSupplementalWord("RAWDICT/noun_more.txt", NOUN, 0);
+	readFix("RAWDICT/WORDNET/noun.exc", NOUN | NOUN_SINGULAR);
+	readNounNoDeterminer("RAWDICT/nounnondeterminer.txt");
+	readMonths("RAWDICT/months.txt");
+
+	//   special word properties
+	readOnomatopoeia("RAWDICT/onomatopoeia.txt");
+	readSupplementalWord("RAWDICT/interjectionlist.txt", INTERJECTION, 0);
+	readSupplementalWord("RAWDICT/otherlist.txt", 0, 0);
+	if (mini <= 0) readHomophones("RAWDICT/homophones.txt");// full dictionary
+
+															// gender information
+	ReadSexed("RAWDICT/he.txt", NOUN_HE | NOUN_HUMAN);
+	ReadSexed("RAWDICT/she.txt", NOUN_SHE | NOUN_HUMAN);
+	ReadSexed("RAWDICT/they.txt", NOUN_THEY | NOUN_HUMAN);
+
+	readWordKind("RAWDICT/timewords.txt", TIMEWORD);
+
+	//   adjectives
+	readData("RAWDICT/WORDNET/data.adj"); //   
+	readIndex("RAWDICT/WORDNET/index.adj", NOUN | VERB); //   
+	readSupplementalWord("RAWDICT/adj_more.txt", ADJECTIVE | ADJECTIVE_NORMAL, 0);
+	readWordKind("RAWDICT/numbers.txt", 0);
+	readFix("RAWDICT/WORDNET/adj.exc", ADJECTIVE | ADJECTIVE_NORMAL); //   more and most forms
+	WalkDictionary(PostFixNumber, 0);
+	ReadSystemFlaggedWords("RAWDICT/adjectivepostpositive.txt", ADJECTIVE_POSTPOSITIVE);
+	readParticipleVerbs("RAWDICT/participleadjectives.txt");
+	AdjNotPredicate("RAWDICT/adj_notpredicate.txt");
+
+	//   adverbs (before verbs to detect separable phrasal adverbs)
+	readData("RAWDICT/WORDNET/data.adv"); //   
+	readIndex("RAWDICT/WORDNET/index.adv", NOUN | VERB | ADJECTIVE); //   
+	readSupplementalWord("RAWDICT/adv_more.txt", ADVERB, 0);
+	readIrregularAdverbs("RAWDICT/adverbs_irregular.txt");
+	readFix("RAWDICT/WORDNET/adv.exc", ADVERB | ADVERB);
+	AddSystemFlag(FindWord("more"), KINDERGARTEN);
+	AddSystemFlag(FindWord("most"), KINDERGARTEN);
+	AddSystemFlag(FindWord("less"), KINDERGARTEN);
+	AddSystemFlag(FindWord("least"), KINDERGARTEN);
+	WalkDictionary(AdjustAdjectiveAdverb);
+	AddQuestionAdverbs();
+
+	// conjunctions
+	readConjunction("RAWDICT/conjunction.txt");
+
+	// read prepositions before verbs so verbs can detect separable phrasal verbs (tailing preposition)
+	readPrepositions("RAWDICT/prepositions.txt", true); //   now add onology data
+	ReadSystemFlaggedWords("RAWDICT/omittabletimepreps.txt", OMITTABLE_TIME_PREPOSITION);
+
+	//   verb data
+	printf("reading verb data\r\n");
+	readData("RAWDICT/WORDNET/data.verb"); //   make this read data last, MUST BE after prepositions, so ONTOLOGY doesnt grow, we put verb forms at end of it
+	readIndex("RAWDICT/WORDNET/index.verb", NOUN); //   
+												   // readFix("RAWDICT/WORDNET/verb.exc",VERB);   file DOES NOT INSURE its inflected forms are correctly ordered or all there
+	readIrregularVerbs("RAWDICT/verb_irregular.txt"); //   read first, to block some wordnet "like wonned won"
+													  // reading wordnets irregualr verbs is useless-- no ordering of data to know what they are supplying
+	RemoveProperty(FindWord("will"), VERB_INFINITIVE | VERB_PRESENT);//   we consider these FUTURE
+	readSupplementalWord("RAWDICT/verb_more.txt", VERB, 0); // normal verbs
+	readSupplementalWord("RAWDICT/verb_infinitiveobject.txt", 0, VERB_TAKES_INDIRECT_THEN_VERBINFINITIVE); // verbs taking infinitive after object
+	readSupplementalWord("RAWDICT/verb_infinitivedirect.txt", 0, VERB | VERB_INFINITIVE | VERB_TAKES_VERBINFINITIVE); // verbs taking infinitive directly
+	readSupplementalWord("RAWDICT/verb_causal_to.txt", 0, VERB | VERB_INFINITIVE | VERB_TAKES_INDIRECT_THEN_TOINFINITIVE); // verbs taking to infinitive after indirect
+	ReadPhrasalVerb("RAWDICT/verb_phrasal.txt"); // full data
+	readSpellingExceptions("RAWDICT/verb_spell.txt");
+
+	//   add in the Auxillary verbs and helper verbs AFTER verbs with normal definitions to preserve meaning list ordering
+	// for BE, HAVE, DO, dont list aux tense. Can only have the generic form (lest apply get confused)
+	SetHelper("have", VERB_INFINITIVE | VERB_PRESENT | AUX_HAVE | VERB);
+	SetHelper("having", VERB_PRESENT_PARTICIPLE | AUX_HAVE | VERB | NOUN | NOUN_GERUND);
+	SetHelper("has", VERB_PRESENT_3PS | AUX_HAVE | VERB | SINGULAR_PERSON);
+	SetHelper("had", VERB_PAST | VERB_PAST_PARTICIPLE | AUX_HAVE | VERB);
+
+	SetHelper("be", VERB | VERB_INFINITIVE | VERB | AUX_BE);
+	SetHelper("am", VERB_PRESENT | AUX_BE | VERB | SINGULAR_PERSON);
+	SetHelper("are", VERB_PRESENT | AUX_BE | VERB);
+	SetHelper("is", AUX_BE | VERB_PRESENT_3PS | VERB | SINGULAR_PERSON);
+	SetHelper("being", AUX_BE | NOUN_GERUND | NOUN | VERB | VERB_PRESENT_PARTICIPLE);
+	SetHelper("was", AUX_BE | VERB_PAST | VERB | SINGULAR_PERSON);
+	SetHelper("were", AUX_BE | VERB_PAST | VERB);
+	SetHelper("been", AUX_BE | VERB | VERB_PAST_PARTICIPLE);
+
+	SetHelper("going_to", AUX_VERB_FUTURE);	// handled specially by substititions so wont exist UNLESS followed by potential infinitive
+	SetHelper("can", VERB_PRESENT | VERB_INFINITIVE | AUX_VERB_PRESENT | VERB); // modal
+	SetHelper("could", AUX_VERB_FUTURE);  // modal
+	SetHelper("dare", VERB_PRESENT | AUX_VERB_PRESENT | VERB | VERB_INFINITIVE);
+	SetHelper("dares", VERB_PRESENT_3PS | AUX_VERB_PRESENT | VERB);
+	SetHelper("daring", VERB_PRESENT_PARTICIPLE | VERB);
+	SetHelper("dared", VERB_PAST | AUX_VERB_PAST | VERB);
+	SetHelper("do", VERB_PRESENT | VERB_INFINITIVE | VERB | AUX_DO);
+	SetHelper("does", VERB_PRESENT_3PS | VERB | AUX_DO | SINGULAR_PERSON);
+	SetHelper("doing", VERB_PRESENT_PARTICIPLE | VERB);
+	SetHelper("did", VERB_PAST | VERB | AUX_DO);
+	SetHelper("done", VERB_PAST_PARTICIPLE | VERB);
+	SetHelper("get", VERB_PRESENT | AUX_BE | VERB | AUX_VERB_PRESENT | VERB_INFINITIVE); // get is treated as aux BE
+	SetHelper("got", VERB_PAST_PARTICIPLE | VERB_PAST | AUX_VERB_PAST | AUX_BE | VERB);	/// colloquial for passive past  // the window got closed
+	SetHelper("gotten", VERB_PAST_PARTICIPLE | VERB | AUX_VERB_PAST | AUX_BE);
+	SetHelper("gets", VERB_PRESENT_3PS | AUX_BE | AUX_VERB_PRESENT | VERB);
+	SetHelper("getting", VERB_PRESENT_PARTICIPLE | AUX_VERB_PRESENT | AUX_BE | VERB | NOUN_GERUND | NOUN | VERB | VERB_PRESENT_PARTICIPLE);
+	SetHelper("had_better", AUX_VERB_PRESENT);
+	SetHelper("may", AUX_VERB_FUTURE); // modal
+	SetHelper("might", AUX_VERB_FUTURE); // modal
+	SetHelper("must", AUX_VERB_FUTURE);     // modal
+	SetHelper("need", VERB_PRESENT | AUX_VERB_PRESENT | VERB | VERB_INFINITIVE);
+	SetHelper("ought", AUX_VERB_FUTURE); // modal
+	SetHelper("ought_to", AUX_VERB_FUTURE);  // modal
+	SetHelper("shall", AUX_VERB_FUTURE); // modal
+	SetHelper("should", AUX_VERB_FUTURE); // modal
+	SetHelper("use_to", AUX_VERB_PAST | VERB | VERB_PRESENT | VERB_INFINITIVE);
+	SetHelper("used_to", AUX_VERB_PAST | VERB | VERB_PAST | VERB_PAST_PARTICIPLE); //BUT cannot handle "are you used to it?"
+	SetHelper("will", AUX_VERB_FUTURE); // modal
+	SetHelper("would", AUX_VERB_FUTURE); // modal
+
+										 // need "going" to be in dictionary so wont spell check into "going to"
+	WORDP X = StoreWord("going", VERB | VERB_PRESENT_PARTICIPLE);
+	ReadSystemFlaggedWords("RAWDICT/existentialbe.txt", PRESENTATION_VERB);
+	ReadSystemFlaggedWords("RAWDICT/adverbs_extent.txt", EXTENT_ADVERB);
+	ReadSystemFlaggedWords("RAWDICT/verb_linking.txt", VERB_TAKES_ADJECTIVE); // copular verb (adjective as object)
+	ReadParseWords("RAWDICT/parsemarks.txt");
+
+
+	// pseudonouns (pronouns + there existential)
+	if (!readPronouns("RAWDICT/pronouns.txt"))
+	{
+		Log(STDUSERLOG, "Dictionary raw data missing\r\n");
+		myexit(0);
+	}
+	readSupplementalWord("RAWDICT/takepostpositiveadjective.txt", 0, 0);
+	StoreWord("there", THERE_EXISTENTIAL, KINDERGARTEN);
+
+	StoreWord("to", TO_INFINITIVE, KINDERGARTEN);
+
+	// DETERMINERS/PREDETERMINERS
+	ReadDeterminers("RAWDICT/determiners.txt");
+
+	StoreWord("\"", QUOTE);
+
+	readSupplementalWord("RAWDICT/conditional_idioms.txt", 0, 0);
+
+	// Add age data
+	readWordByAge("RAWDICT/preschool_kindergarten.txt", KINDERGARTEN);
+	readWordByAge("RAWDICT/grade1_2.txt", GRADE1_2);
+	readWordByAge("RAWDICT/grade3_4.txt", GRADE3_4);
+	readWordByAge("RAWDICT/grade5_6.txt", GRADE5_6);
+	readWordByAge("RAWDICT/jrhigh.txt", GRADE5_6);
+	readWordByAge("RAWDICT/basicEnglish.txt", GRADE5_6);
+	readCommonness();
+	ReadBNCPosData();
+	readNonPos("RAWDICT/nonpos.txt");
+	if (mini >= 0) ReadDeadSynset("RAWDICT/deadsynset.txt"); // if we dont want wordnet all (which is the usual)
+	readNonNames("RAWDICT/nonnames.txt"); //   override our dictionary on some words it thinks of as names that are too common
+	readNonWords("RAWDICT/nonwords.txt");
+}
+
+static void AddFlagDownHierarchy(MEANING T, unsigned int depth, uint64 flag)
+{
+	if (depth >= 1000 || !T) return;
+	WORDP D = Meaning2Word(T);
+	if (D->inferMark == inferMark) return;
+	AddSystemFlag(D, flag);
+
+	D->inferMark = inferMark;
+	unsigned int index = Meaning2Index(T);
+	unsigned int size = GetMeaningCount(D);
+	if (!size) size = 1;
+
+	for (unsigned int k = 1; k <= size; ++k) //   for each meaning of this dictionary word
+	{
+		if (index)
+		{
+			if (k != index) continue; //   not all, just one specific meaning
+			T = GetMaster(GetMeaning(D, k));
+		}
+		else
+		{
+			if (GetMeaningCount(D)) T = GetMaster(GetMeaning(D, k));
+			else T = MakeMeaning(D); //   did not request a specific meaning, look at each in turn
+		}
+		if (Meaning2Index(T)) // do master loop marking
+		{
+			MEANING M = GetMeaning(D, k);
+			while (M)
+			{
+				WORDP X = Meaning2Word(M);
+				if (X == D) break;
+				AddSystemFlag(X, flag);
+				M = GetMeaning(X, Meaning2Index(M));
+			}
+		}
+
+		//   for the current T meaning
+		int l = 0;
+		while (++l) //   find the children of the meaning of T
+		{
+			MEANING child = FindChild(T, l); //   only headers sought
+			if (!child) break;
+
+			//   child and all syn names of child
+			AddFlagDownHierarchy(child, depth, flag);
+		} //   end of children for this value
+		--depth;
+	}
+}
+
+static void readMassNouns(char* file)
+{
+	FILE* in = FopenReadWritten(file);
+	if (!in)
+	{
+		Log(STDUSERLOG, "** Missing file %s\r\n", file);
+		return;
+	}
+	StartFile(file);
+	char word[MAX_WORD_SIZE];
+	while (fget_input_string(false, false, input_string, in) != 0)
+	{
+		if (input_string[0] == '#' || input_string[0] == 0) continue;
+		char* ptr = input_string;
+		ptr = ReadWord(ptr, word);    //   the noun
+		if (*word == 0) break;
+
+		// wordnet hiearchy
+		char* tilde = strchr(word, '~');
+		if (tilde && IsDigit(tilde[1]))
+		{
+			// mark mass nouns
+			NextInferMark();
+			MEANING M = GetMaster(ReadMeaning(word, false));
+			AddFlagDownHierarchy(M, 0, NOUN_NODETERMINER);
+			continue;
+		}
+
+		WORDP D = StoreWord(word);
+		size_t len = strlen(word);
+		if (word[len - 1] == 'g' && word[len - 2] == 'n' && word[len - 3] == 'i') continue;	// skip gerunds
+		if (!(D->properties & (NOUN_SINGULAR | NOUN_PROPER_SINGULAR))) AddProperty(D, NOUN | NOUN_SINGULAR); // defining
+		AddSystemFlag(D, NOUN_NODETERMINER);
+	}
+}
+
+void LoadRawDictionary(int mini) // 6 == foreign
+{
+	sprintf(logFilename, "USERS/dictionary_log.txt");
+	FILE* out = FopenUTF8Write(logFilename);
+	if (mini && mini != 6) fprintf(out, "Mini: %d\r\n", mini);
+	fclose(out);
+	ClearWordMaps();
+
+	AcquireDefines("src/dictionarySystem.h"); // need to process raw dictionary data but should NOT be final dict, since this is a dynamic file
+	InitFactWords();
+	ExtendDictionary();
+	Dqword = StoreWord("~qwords");
+	AddInternalFlag(Dqword, CONCEPT);
+
+	if (mini != 6) ReadEnglish(mini);
+	else ReadForeign();
+
+	// By now, the full NORMAL dictionary has been created.
+
+	//   fix the dictionary
+	*currentFilename = 0;
+	if (!stricmp(language, "english"))
+	{
+		WalkDictionary(VerifyDictEntry); // removes flags based on deadsysnet removing entries
+		WalkDictionary(PurgeDictionary); // adds meanings to the synset head stubs from its members
+		WalkDictionary(FixSynsets);
+		WalkDictionary(ExtractSynsets); // switch wordnet id nodes back to real words
+		readMassNouns("RAWDICT/nounmass.txt");   // ENGLISH ONLY
+		ReadDeadFacts("RAWDICT/deadfacts.txt"); // kill off some problematic dictionary facts
+
+												// mark mass nouns
+		WalkDictionary(MarkAbstract);
+	}
+	// dictionary is full and normal right now
+
+	// remove EVERYTHING by default (except aux verbs, prepositions, conjunctions, determiners, pronouns, currency, Punctuation)
+	if (mini > 0 && mini != 6) WalkDictionary(DeleteAllWords, 0);
+
+	if (mini >= 2 && mini != 6) // merge in layer0 stuff-- dont do layer 1, which should remain dynamic, but keep keywords we know about
+	{
+		// then revive specifics 
+		AddShortDict("TOPIC/BUILD0/dict0.txt"); // add dictionary entries defined by level 0 dictionary entries
+		if (mini == 3) AddShortDict("TOPIC/BUILD1/dict1.txt"); // add dictionary entries defined by level 1 dictionary entries
+
+		FACT* F = factFree;
+		InitKeywords("TOPIC/BUILD0/keywords0.txt", NULL, BUILD0, true, false); // propogate entries into the dictionary with types as needed (just not concept names)- also creates facts we want to destroy
+		if (mini == 3)	InitKeywords("TOPIC/BUILD1/keywords1.txt", NULL, BUILD1, true, false); // propogate entries into the dictionary with types as needed - also creates facts we want to destroy
+		CheckShortFacts();
+		while (factFree > F) FreeFact(factFree--);
+
+		CheckShortDictionary("TOPIC/BUILD0/patternWords0.txt", true); // could live w/o pattern words, but extra amount is small
+		if (mini == 3)	CheckShortDictionary("TOPIC/BUILD1/patternWords1.txt", true);
+
+		WalkDictionary(MoveSetsToBase);
+	}
+
+	// these get added to dictionary regardless of mini status
+
+	char aux[MAX_WORD_SIZE];
+	sprintf(aux, "RAWDICT/auxdict.txt");
+	if (mini != 6)
+	{
+		CheckShortDictionary(aux, false); // vocabulary specific to this app
+		ReadAbbreviations("LIVEDATA/abbreviations.txt"); // needed for burst/tokenizing
+		ReadTitles("RAWDICT/titles.txt"); //   forms of address like Mr. (before readData so things like potage_St._Germain are correctly handled - burst needs to know them...
+		WalkDictionary(DefineShortCanonicals, 0); // all more and most forms as needed
+		ReadWordFrequency("RAWDICT/500kwords.txt", 20000, mini > 0); // add most frequent words NOT already known or until dict is 20K
+		didSomething = true;
+		while (didSomething)
+		{
+			didSomething = false;
+			WalkDictionary(ReviveWords);  // revive implied canonicals and all marked words to keep
+		}
+		WalkDictionary(CleanDead); // insure all synonym circulars point only to living members and alter up chains
+		WalkDictionary(VerifyEntries); // prove good entries before writeout
+	}
+}
+
+void SortAffect(char* file)
+{
+	char* wordlist[10000];
+	unsigned int index = 0;
+	FILE* out = fopen("newaffect.txt", "wb");
+	char word[MAX_WORD_SIZE];
+	FILE* in = fopen(file, "rb");
+	char affectName[MAX_WORD_SIZE];
+	while (ReadALine(readBuffer, in) >= 0)
+	{
+		char* ptr = readBuffer;
+		while (ptr && *ptr)
+		{
+			ptr = ReadCompiledWord(ptr, word);
+			if (*word == 0 || *word == '#') break;
+			if (*word == '~')
+			{
+				//   dump word list of old
+				if (index) fprintf(out, "\r\n%s # %d\r\n", affectName, index);
+				for (unsigned int i = 0; i < index; ++i)
+				{
+					fprintf(out, "%s ", wordlist[i]);
+					if (((i + 1) % 10) == 0) fprintf(out, "\r\n");
+				}
+				fprintf(out, "\r\n");
+				index = 0;
+
+				//   dump new header
+				strcpy(affectName, word);
+				continue;
+			}
+
+			//   now dump out accumulated words in order for affect kind
+			unsigned int i;
+			for (i = 0; i < index; ++i)
+			{
+				int val = stricmp(word, wordlist[i]);
+				if (val == 0) break;
+				if (val  < 0) //   insert here
+				{
+					for (unsigned int j = index; j > i; --j) wordlist[j] = wordlist[j - 1];
+					++index;
+					wordlist[i] = AllocateHeap(word);
+					break;
+				}
+			}
+			if (i >= index) wordlist[index++] = AllocateHeap(word);
+		}
+	}
+	//   dump word list of remaining affect kind
+	if (index) fprintf(out, "\r\n%s # %d\r\n", affectName, index);
+	for (unsigned int i = 0; i < index; ++i)
+	{
+		fprintf(out, "%s ", wordlist[i]);
+		if (((i + 1) % 10) == 0) fprintf(out, "\r\n");
+	}
+	fprintf(out, "\r\n");
+	fclose(in);
+	fclose(out);
+}
+
+void SortSubstitions(char* file)
+{
+	char* wordlist[30000];
+	char* tolist[30000];
+	char* linelist[30000];
+	unsigned int index = 0;
+	FILE* out = fopen("new_substitutes.txt", "wb");
+	char word[MAX_WORD_SIZE];
+	FILE* in = fopen(file, "rb");
+	if (!in) return;
+
+	while (ReadALine(readBuffer, in) >= 0)
+	{
+		if (readBuffer[0] == '#' || readBuffer[0] == 0)
+		{
+			fprintf(out, "%s\r\n", readBuffer);
+			continue;
+		}
+		char* ptr = ReadCompiledWord(readBuffer, word);    //   to be replaced word
+		if (*word == 0 || *word == '#') continue;
+
+		unsigned int i;
+		for (i = 0; i < index; ++i) //   find spot to insert
+		{
+			int val = stricmp(word, wordlist[i]);
+			if (val == 0) break;
+			if (val  < 0) //   insert here
+			{
+				for (unsigned int j = index; j > i; --j)
+				{
+					wordlist[j] = wordlist[j - 1];
+					linelist[j] = linelist[j - 1];
+					tolist[j] = tolist[j - 1];
+				}
+				++index;
+				wordlist[i] = AllocateHeap(word);
+				linelist[i] = AllocateHeap(readBuffer);
+				ReadCompiledWord(ptr, word); //   what to substitute
+				tolist[i] = AllocateHeap(word);
+				break;
+			}
+		}
+		if (i >= index) //   insert at end
+		{
+			linelist[index] = AllocateHeap(readBuffer);
+			wordlist[index] = AllocateHeap(word);
+			ReadCompiledWord(ptr, word); //   what to substitute
+			tolist[index++] = AllocateHeap(word);
+		}
+	}
+	//   dump word list of old
+	fprintf(out, "\r\n # %d\r\n", index);
+	for (unsigned int i = 0; i < index; ++i) fprintf(out, "%s\r\n", linelist[i]);
+	fclose(in);
+	fclose(out);
+}
+
+static void WriteShortWords(WORDP D, uint64 junk)
+{
+	if (!(D->internalBits & DELETED_MARK))
+	{
+		FILE* out = (FILE*)junk;
+		fprintf(out, "%s\r\n", D->word);
+	}
+}
+
+static void MarkOtherForms(WORDP D)
+{
+	// propogate to all related forms
+	WORDP E = GetComparison(D); //  adj/adv
+	while (E && E != D)
+	{
+		E->internalBits &= -1 ^ DELETED_MARK;
+		WORDP X = GetComparison(E);
+		if (X == E) break;
+		E = X;
+	}
+	E = GetTense(D); // verb
+	while (E && E != D)
+	{
+		RemoveInternalFlag(E, DELETED_MARK);
+		WORDP X = GetTense(E);
+		if (X == E) break;
+		E = X;
+	}
+	E = GetPlural(D); // noun
+	while (E && E != D)
+	{
+		E->systemFlags &= -1 ^ DELETED_MARK;
+		WORDP X = GetPlural(E);
+		if (X == E) break;
+		E = X;
+	}
+}
+
+static void DefineShortCanonicals(WORDP D, uint64 junk)
+{
+	if (!(D->internalBits & DELETED_MARK)) // IF these, then these by implication
+	{
+		MarkOtherForms(D);
+	}
+}
+
+static void ReadWordFrequency(char* name, unsigned int count, bool until)
+{
+	if (count == 0) return;
+	unsigned int used = (dictionaryFree - dictionaryBase);
+	if (until)
+	{
+		if (used >= count) return;
+		count -= used;
+	}
+
+	char word[MAX_WORD_SIZE];
+	FILE* in = FopenReadNormal(name);
+	if (!in)
+	{
+		Log(STDUSERLOG, "** Missing file %s\r\n", name);
+		return;
+	}
+	currentFileLine = 0;
+	while (ReadALine(readBuffer, in) >= 0)
+	{
+		char* ptr = ReadWord(readBuffer, word); //  get frequency
+		ptr = ReadWord(ptr, word);	// the word
+		WORDP D = FindWord(word, 0, PRIMARY_CASE_ALLOWED);
+		if (!D) continue;	// ignore it
+		if (IsUpperCase(D->word[0] || !IsAlphaUTF8(D->word[0]))) continue; // dont need these
+		if ((D->properties & PART_OF_SPEECH) == 0) continue; // not a really useful word
+		if (D->internalBits & DELETED_MARK) D->internalBits ^= DELETED_MARK; // allow the word
+		MarkOtherForms(D);
+		if (--count == 0) break;
+	}
+	fclose(in);
+}
+
+void BuildShortDictionaryBase()
+{
+	FILE* out = fopen("RAWDICT/basicwordlist.txt", "wb");
+	WalkDictionary(WriteShortWords, (uint64)out);
+	fclose(out);
+}
+
+void ReadBNC(char* buffer)
+{
+	FILE* in;
+	if (!*buffer) in = fopen("RAWDICT/bncsource.txt", "rb");
+	else in = fopen("RAWDICT/bncfreq.txt", "rb");
+	if (!in) return;
+	FILE* out;
+	if (!*buffer)  out = fopen("RAWDICT/bncfreq.txt", "wb");
+	else out = fopen("RAWDICT/bncfreq1.txt", "wb");
+	int frequency;
+	char word[MAX_WORD_SIZE];
+	char pos[MAX_WORD_SIZE];
+	unsigned int noun = 0, verb = 0, adjective = 0, adverb = 0, preposition = 0, conjunction = 0, aux = 0;
+	char prior[MAX_WORD_SIZE];
+	*prior = 0;
+	char priorBase[MAX_WORD_SIZE];
+	*priorBase = 0;
+	while (ReadALine(readBuffer, in) >= 0)
+	{
+		if (*readBuffer == '#' || !*readBuffer) continue;
+		char* ptr = readBuffer;
+		if (!*buffer) // BNC: frequency, word, pos, files it occurs in  OR  base  word pos freq
+		{
+			ptr = ReadInt(ptr, frequency);
+			ptr = ReadCompiledWord(ptr, word);
+		}
+		else // word, base, type, frequency
+		{
+			ptr = ReadCompiledWord(ptr, word);
+			ptr = ReadCompiledWord(ptr, priorBase);
+			ptr = ReadCompiledWord(ptr, pos);
+			ReadInt(ptr, frequency);
+		}
+		WORDP entry, canonical;
+		uint64 sysflags = 0;
+		uint64 cansysflags = 0;
+		WORDP revise;
+		GetPosData(0, word, revise, entry, canonical, sysflags, cansysflags, false);
+		char* nounbase = 0;
+		char* verbbase = 0;
+		char* adjectivebase = 0;
+		char* adverbbase = 0;
+
+		if (!*buffer)
+		{
+			nounbase = GetSingularNoun(word, false, true);
+			verbbase = GetInfinitive(word, true);
+			adjectivebase = GetAdjectiveBase(word, true);
+			adverbbase = GetAdverbBase(word, true);
+			WORDP D = FindWord(word, 0, PRIMARY_CASE_ALLOWED);
+			if (canonical && canonical->properties & PART_OF_SPEECH) { ; } // we know the word as a part of speech
+			else continue; // word is meaningless to us
+		}
+		char base[MAX_WORD_SIZE];
+		strcpy(base, word);
+		if (*prior && stricmp(word, prior) && *buffer) // new word
+		{
+			// issue old word
+			fprintf(out, " %s NOUN:%d VERB:%d ADJECTIVE:%d ADVERB:%d PREPOSTION:%d CONJUNCTION:%d AUX:%d\r\n", prior, noun, verb, adjective, adverb, preposition, conjunction, aux);
+			*prior = 0;
+			noun = 0, verb = 0, adjective = 0, adverb = 0, preposition = 0, conjunction = 0, aux = 0;
+		}
+		strcpy(prior, word);
+
+		uint64 kind = 0;
+		if (!*buffer) // BNC: frequency, word,      ==> pos, files it occurs in  OR  base  word pos freq
+		{
+			ReadCompiledWord(ptr, pos);
+			if (!stricmp(pos, "AJ0") || !stricmp(pos, "AJC") || !stricmp(pos, "AJS")) kind = ADJECTIVE;
+			if (!stricmp(pos, "AV0")) kind = ADVERB;
+			if (!stricmp(pos, "CJC") || !stricmp(pos, "CJS") || !stricmp(pos, "CJT")) kind = CONJUNCTION_COORDINATE;
+			if (!stricmp(pos, "NN1-NP0") || !stricmp(pos, "NN0") || !stricmp(pos, "NN1") || !stricmp(pos, "NN2") || !stricmp(pos, "NP0")) kind = NOUN;
+			if (!stricmp(pos, "PRF") || !stricmp(pos, "PRP")) kind = PREPOSITION;
+			if (!stricmp(pos, "VRB") || !stricmp(pos, "VBD") || !stricmp(pos, "VBG") || !stricmp(pos, "VBI") || !stricmp(pos, "VBN") || !stricmp(pos, "VBZ")) kind = VERB;
+			if (!stricmp(pos, "VDB") || !stricmp(pos, "VDD") || !stricmp(pos, "VDG") || !stricmp(pos, "VDI") || !stricmp(pos, "VDZ")) kind = VERB;
+			if (!stricmp(pos, "VVD-VVN") || !stricmp(pos, "VHB") || !stricmp(pos, "VHD") || !stricmp(pos, "VHG") || !stricmp(pos, "VHI") || !stricmp(pos, "VHN") || !stricmp(pos, "VHZ")) kind = VERB;
+			if (!stricmp(pos, "VVB") || !stricmp(pos, "VVD") || !stricmp(pos, "VVG") || !stricmp(pos, "VVI") || !stricmp(pos, "VVN") || !stricmp(pos, "VVZ")) kind = VERB;
+			if (!stricmp(pos, "VM0")) kind = AUX_VERB_FUTURE;
+			if (!kind) continue; // dont know the type
+			char* type = 0;
+			if (kind == NOUN) type = "noun";
+			if (kind == VERB) type = "verb";
+			if (kind == ADJECTIVE) type = "adjective";
+			if (kind == ADVERB) type = "adverb";
+			if (kind == PREPOSITION) type = "preposition";
+			if (kind == CONJUNCTION_COORDINATE) type = "conjunction";
+			if (kind == AUX_VERB_FUTURE) type = "aux";
+
+			if (kind == NOUN && nounbase) strcpy(base, nounbase);
+			if (kind == VERB && verbbase) strcpy(base, verbbase);
+			if (kind == ADJECTIVE && adjectivebase) strcpy(base, adjectivebase);
+			if (kind == ADVERB && adverbbase) strcpy(base, adverbbase);
+			if (kind == AUX_VERB_FUTURE && verbbase) strcpy(base, verbbase);
+			if (kind == NOUN && entry && entry->properties & (NOUN_INFINITIVE | NOUN_GERUND)) continue;	// ignore verbal noun use (its a verb to us)
+			if (kind == ADJECTIVE && entry && entry->properties & ADJECTIVE_PARTICIPLE) continue;	 // ignore adjective use of verb thingy
+
+			if (kind == NOUN && !nounbase) continue;	// WE dont think it can be this
+			if (kind == VERB && !verbbase) continue;	// WE dont think it can be this
+			if (kind == ADJECTIVE && !adjectivebase) continue;	// WE dont think it can be this
+			if (kind == ADVERB && !adverbbase) continue;	// WE dont think it can be this
+
+			fprintf(out, " %s %s  %s %d\r\n", word, base, type, frequency);
+			continue;
+		}
+		else
+		{
+			if (!stricmp(pos, "noun")) noun += frequency;
+			if (!stricmp(pos, "verb")) verb += frequency;
+			if (!stricmp(pos, "adjective")) adjective += frequency;
+			if (!stricmp(pos, "adverb")) adverb += frequency;
+			if (!stricmp(pos, "preposition")) preposition += frequency;
+			if (!stricmp(pos, "conjunction")) conjunction += frequency;
+			if (!stricmp(pos, "aux")) aux += frequency;
+		}
+	}
+	fclose(in);
+	fclose(out);
+}
 
 #ifdef COPYRIGHT
 

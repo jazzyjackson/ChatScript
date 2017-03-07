@@ -2,7 +2,7 @@
 
 > Copyright Bruce Wilcox, gowilcox@gmail.com brilligunderstanding.com 
 
-> Revision 2/09/2017 cs7.2
+> Revision 3/4/2017 cs7.3
 
 # Command Line Parameters
 
@@ -103,6 +103,7 @@ the system can do complete logs. You are welcome to set log size lots smaller if
 |`trace`           | turn on all tracing.
 |`redo`            | see documentation for :redo in [ChatScript Debugging Manual](ChatScript-Debugging-Manual.md) manual
 |`noboot`          | Do not run any boot script on engine startup
+|`logsize=n`          | When server log file exceeds n megabytes, rename it and start with a new file.
 
 
 Here few command line parameters usage examples of usual edit/compile developement phase, running ChatScript from a Linux terminal console (standalone mode):

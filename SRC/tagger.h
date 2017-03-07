@@ -51,7 +51,7 @@ extern uint64 lcSysFlags[MAX_SENTENCE_LENGTH];
 extern uint64 canSysFlags[MAX_SENTENCE_LENGTH];
 extern uint64 posValues[MAX_SENTENCE_LENGTH];	
 extern  uint64* tags;
-
+extern bool reverseWords;
 #define AUXQUESTION 1
 #define QWORDQUESTION 2
 
@@ -85,7 +85,6 @@ void TagTest(char* file);
 extern unsigned int tagRuleCount;
 extern unsigned char bitCounts[MAX_SENTENCE_LENGTH]; 
 #define MAX_POS_RULES 1500
-void ReadPosPatterns(char* file,uint64 junk);
 void MarkTags(unsigned int i);
 char* GetNounPhrase(int i,const char* avoid);
 extern int clauses[MAX_SENTENCE_LENGTH];

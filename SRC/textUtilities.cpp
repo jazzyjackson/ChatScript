@@ -824,14 +824,8 @@ char* IsUTF8(char* buffer,char* character) // swallow a single utf8 character (p
 	if (((unsigned char)*buffer) < 127) return buffer+1; // not utf8
 
 	char* start = buffer;
-	unsigned char c = (unsigned char) *buffer;
-	unsigned int count = 0; // bytes beyond first
-	if (c >= 192 && c <= 223) count = 1;
-	else if (c >= 224 && c <= 239) count = 2;
-	else if (c >= 240 && c <= 247) count = 3; 
-	else if (c >= 248 && c <= 251) count = 4;
-	else if (c >= 252 && c <= 253) count = 5;
-	else count = 300;
+	unsigned int count = UTFCharSize(buffer) - 1; // bytes beyond first
+	if (count == 0) count = 300; // not real?
 
 	// does count of extenders match requested count
 	unsigned int n = 0;
@@ -952,6 +946,7 @@ bool IsDigitWord(char* ptr,bool comma) // digitized number
 		{
 			if (++periods > 1) return false; // too many periods
 		}
+		else if (*ptr == '%' && !ptr[1]) break; // percentage
 		else if (*ptr == ':');	//   TIME delimiter
 		else if (*ptr == ',' && comma); // allow comma
 		else if (ptr == currency) break; // dont need to see currency end
@@ -1492,6 +1487,89 @@ static bool ConditionalReadRejected(char* start,char*& buffer,bool revise)
 	return true; // reject this line 
 }
 
+bool AdjustUTF8(char* start,char* buffer)
+{
+	bool hasbadutf = false;
+	while (*++buffer)  // check every utf character
+	{
+		if (*buffer & 0x80) // is utf in theory
+		{
+			char prior = (start == buffer) ? 0 : *(buffer - 1);
+			char utfcharacter[10];
+			char* x = IsUTF8(buffer, utfcharacter); // return after this character if it is valid.
+			if (utfcharacter[1]) // rewrite some utf8 characters to std ascii
+			{
+				if (buffer[0] == 0xc2 && buffer[1] == 0xb4) // a form of '
+				{
+					*buffer = '\'';
+					memmove(buffer + 1, x, strlen(x) + 1);
+					x = buffer + 1;
+				}
+				else if (buffer[0] == 0xe2 && buffer[1] == 0x80 && buffer[2] == 0x98)  // open single quote
+				{
+					// if attached to punctuation, leave it so it will tokenize with them
+					*buffer = ' ';
+					buffer[1] = '\'';
+					buffer[2] = ' ';
+				}
+				else if (buffer[0] == 0xe2 && buffer[1] == 0x80 && buffer[2] == 0x99)  // closing single quote (may be embedded or acting as a quoted expression
+				{
+					if (buffer != start && IsAlphaUTF8(*(buffer - 1)) && IsAlphaUTF8(*x)) // embedded contraction
+					{
+						*buffer = '\'';
+						memmove(buffer + 1, x, strlen(x) + 1);
+						x = buffer + 1;
+					}
+					else if (prior == 's' && !IsAlphaUTF8(*x)) // ending possessive
+					{
+						*buffer = '\'';
+						memmove(buffer + 1, x, strlen(x) + 1);
+						x = buffer + 1;
+					}
+					else if (prior == '.' || prior == '?' || prior == '!') // leave attached to prior so readdocument can leave them together
+					{
+						*buffer = '\'';
+						buffer[1] = ' ';
+						buffer[2] = ' ';
+					}
+					else
+					{
+						*buffer = ' ';
+						buffer[1] = '\'';
+						buffer[2] = ' ';
+					}
+				}
+				else if (buffer[0] == 0xe2 && buffer[1] == 0x80 && buffer[2] == 0x9c)  // open double quote
+				{
+					*buffer = '\'';
+					memmove(buffer + 1, x, strlen(x) + 1);
+				}
+				else if (buffer[0] == 0xe2 && buffer[1] == 0x80 && buffer[2] == 0x9d)  // closing double quote
+				{
+					*buffer = '"';
+					memmove(buffer + 1, x, strlen(x) + 1);
+				}
+				else if (buffer[0] == 0xe2 && buffer[1] == 0x80 && buffer[2] == 0x94 && !(tokenControl & NO_FIX_UTF) && !compiling)  // mdash
+				{
+					*buffer = '-';
+				}
+				else if (buffer[0] == 0xe2 && buffer[1] == 0x80 && (buffer[2] == 0x94 || buffer[2] == 0x93) && !(tokenControl & NO_FIX_UTF) && !compiling)  // mdash
+				{
+					*buffer = '-';
+					memmove(buffer + 1, x, strlen(x) + 1);
+				}
+				buffer = x - 1; // valid utf8
+			}
+			else // invalid utf8
+			{
+				hasbadutf = true;
+				*buffer = 'z';	// replace with legal char
+			}
+		}
+	}
+	return hasbadutf;
+}
+
 int ReadALine(char* buffer,FILE* in,unsigned int limit,bool returnEmptyLines,bool convertTabs) 
 { //  reads text line stripping of cr/nl
 	currentFileLine = maxFileLine; // revert to best seen
@@ -1776,87 +1854,7 @@ RESUME:
 	buffer[1] = 0;
 	buffer[2] = 1; //   clear ahead to make it obvious we are at end when debugging
 
-	if (hasutf && BOM) 
-	{
-		buffer = start  - 1;
-		while (*++buffer)  // check every utf character
-		{
-			if (*buffer & 0x80) // is utf in theory
-			{
-				char prior = (start == buffer) ? 0 :  *(buffer-1);
-				char utfcharacter[10];
-				char* x = IsUTF8(buffer,utfcharacter); // return after this character if it is valid.
-				if (utfcharacter[1]) // rewrite some utf8 characters to std ascii
-				{
-					if (buffer[0] == 0xc2 && buffer[1] == 0xb4) // a form of '
-					{
-						*buffer = '\'';
-						memmove(buffer+1,x,strlen(x)+1);
-						x = buffer + 1;
-					}
-					else if (buffer[0] == 0xe2 && buffer[1] == 0x80 && buffer[2] == 0x98 )  // open single quote
-					{
-						// if attached to punctuation, leave it so it will tokenize with them
-						*buffer = ' ';
-						buffer[1] = '\'';
-						buffer[2] = ' ';
-					}
-					else if (buffer[0] == 0xe2 && buffer[1] == 0x80 &&  buffer[2] == 0x99)  // closing single quote (may be embedded or acting as a quoted expression
-					{
-						if (buffer != start && IsAlphaUTF8(*(buffer-1)) && IsAlphaUTF8(*x)) // embedded contraction
-						{
-							*buffer = '\'';
-							memmove(buffer+1,x,strlen(x)+1);
-							x = buffer + 1;
-						}
-						else if (prior == 's' && !IsAlphaUTF8(*x)) // ending possessive
-						{
-							*buffer = '\'';
-							memmove(buffer+1,x,strlen(x)+1);
-							x = buffer + 1;
-						}
-						else if (prior == '.' || prior == '?' || prior == '!') // leave attached to prior so readdocument can leave them together
-						{
-							*buffer = '\'';
-							buffer[1] = ' ';
-							buffer[2] = ' ';
-						}
-						else
-						{
-							*buffer = ' ';
-							buffer[1] = '\'';
-							buffer[2] = ' ';
-						}
-					}
-					else if (buffer[0] == 0xe2 && buffer[1] == 0x80 && buffer[2] == 0x9c )  // open double quote
-					{
-						*buffer = '\'';
-						memmove(buffer+1,x,strlen(x)+1);
-					}
-					else if (buffer[0] == 0xe2 && buffer[1] == 0x80 && buffer[2] == 0x9d )  // closing double quote
-					{
-						*buffer = '"';
-						memmove(buffer+1,x,strlen(x)+1);
-					}
-					else if (buffer[0] == 0xe2 && buffer[1] == 0x80 && buffer[2] == 0x94 && !(tokenControl & NO_FIX_UTF) && !compiling)  // mdash
-					{
-						*buffer =  '-';
-					}
-					else if (buffer[0] == 0xe2 && buffer[1] == 0x80 && (buffer[2] == 0x94 || buffer[2] == 0x93)&& !(tokenControl & NO_FIX_UTF)&& !compiling)  // mdash
-					{
-						*buffer =  '-';
-						memmove(buffer+1,x,strlen(x)+1);
-					}
-					buffer = x-1; // valid utf8
-				}
-				else // invalid utf8
-				{
-					hasbadutf = true;
-					*buffer = 'z';	// replace with legal char
-				}
-			}
-		}
-	}
+	if (hasutf && BOM)  hasbadutf = AdjustUTF8(start, start - 1);
 	if (hasbadutf && showBadUTF && !server)  
 		Log(STDTRACELOG,(char*)"Bad UTF-8 %s at %d in %s\r\n",start,currentFileLine,currentFilename);
     return (buffer - start);
@@ -1936,11 +1934,11 @@ Used for function calls, to read their callArgumentList. Arguments are not evalu
 #endif
     char* start = buffer;
 	result = NOPROBLEM_BIT;
-
     *buffer = 0;
     int paren = 0;
 	ptr = SkipWhitespace(ptr);
-    if (*ptr == '^') 
+	char* beginptr = ptr;
+	if (*ptr == '^')
     {
         ptr = ReadCompiledWord(ptr,buffer); // get name and prepare to peek at next token
 		if (IsDigit(buffer[1]))  
@@ -1957,7 +1955,6 @@ Used for function calls, to read their callArgumentList. Arguments are not evalu
 	}
 	else if (*ptr == '"' || (*ptr == '\\' && ptr[1] == '"'))   // a string
 	{
-		char* beginptr = ptr;
 		ptr = ReadQuote(ptr,buffer);		// call past quote, return after quote
 		if (ptr != beginptr) return ptr;	// if ptr == start, ReadQuote refused to read (no trailing ")
 	}
@@ -1967,7 +1964,7 @@ Used for function calls, to read their callArgumentList. Arguments are not evalu
     {
         char c = *ptr;
 		int x = GetNestingData(c);
-		if (paren == 0 && (c == ' ' || x == -1  || c == ENDUNIT)) break; // simple arg separator or outer closer or end of data
+		if (paren == 0 && (c == ' ' || x == -1  || c == ENDUNIT) && ptr != beginptr) break; // simple arg separator or outer closer or end of data
         if ((unsigned int)(buffer-start) < (unsigned int)(maxBufferSize-2)) *buffer++ = c; // limit overflow into argument area
         *buffer = 0;
 		if (x) paren += x;
@@ -2020,7 +2017,7 @@ char* ReadCompiledWord(char* ptr, char* word,bool noquote,bool var)
 				*word++ = *ptr++;
 				continue;
 			}
-			else if (c == end && (*ptr == ' ' || *ptr == 0)) // a terminator followed by white space or end of data terminated
+			else if (c == end && (*ptr == ' ' || nestingData[(unsigned char)*ptr] == -1 || *ptr == 0)) // a terminator followed by white space or closing bracket or end of data terminated
 			{
 				if (*ptr == ' ') ++ptr;
 				break; // blank or nul after closer
@@ -2591,19 +2588,65 @@ int64 Convert2Integer(char* number)  //  non numbers return NOT_A_NUMBER
 void MakeLowerCase(char* ptr)
 {
     --ptr;
-    while (*++ptr) *ptr = GetLowercaseData(*ptr);
+	while (*++ptr)
+	{
+		if (*ptr == 0xc3 && (unsigned char)ptr[1] >= 0x80 && (unsigned char)ptr[1] <= 0x9e)
+		{
+			unsigned char c = (unsigned char)*++ptr; // get the cap form
+			c -= 0x80;
+			c += 0x9f; // get lower case form
+			*ptr = (char)c;
+		}
+		else if (*ptr >= 0xc4 && *ptr <= 0xc9)
+		{
+			unsigned char c = (unsigned char)*++ptr;
+			*ptr = (char)c | 1;
+		}
+		else *ptr = GetLowercaseData(*ptr);
+	}
 }
 
 void MakeUpperCase(char* ptr)
 {
     --ptr;
-    while (*++ptr) *ptr = GetUppercaseData(*ptr);
+	while (*++ptr)
+	{
+		if (*ptr == 0xc3 && ptr[1] >= 0x9f && ptr[1] <= 0xbf)
+		{
+			unsigned char c = (unsigned char)*++ptr; // get the cap form
+			c -= 0x9f;
+			c += 0x80; // get upper case form
+			*ptr = (char)c;
+		}
+		else if (*ptr >= 0xc4 && *ptr <= 0xc9)
+		{
+			unsigned char c = (unsigned char)*++ptr; // get the cap form
+			*ptr = (char)c & 0xfe;
+		}
+		else *ptr = GetUppercaseData(*ptr);
+	}
 }
 
 char*  MakeLowerCopy(char* to,char* from)
 {
 	char* start = to;
-	while (*from) *to++ = GetLowercaseData(*from++);
+	while (*from)
+	{
+		if (*from == 0xc3 && from[1] >= 0x80 && from[1] <= 0x9e)
+		{
+			*to++ = *from++;
+			unsigned char c = *from++; // get the cap form
+			c -= 0x80;
+			c += 0x9f; // get lower case form
+			*to++ = c;
+		}
+		else if (*from >= 0xc4 && *from <=  0xc9)
+		{
+			*to++ = *from++;
+			*to++ = *from++ | 1; // lowercase from cap
+		}
+		else *to++ = GetLowercaseData(*from++);
+	}
 	*to = 0;
 	return start;
 }
@@ -2611,7 +2654,23 @@ char*  MakeLowerCopy(char* to,char* from)
 char* MakeUpperCopy(char* to,char* from)
 {
 	char* start = to;
-	while (*from) *to++ = GetUppercaseData(*from++);
+	while (*from)
+	{
+		if (*from == 0xc3 && from[1] >= 0x9f && from[1] <= 0xbf)
+		{
+			*to++ = *from++;
+			unsigned char c = *from++; // get the cap form
+			c -= 0x9f;
+			c += 0x80; // get upper case form
+			*to++ = c;
+		}
+		else if ((*from >= 0xc4 && *from <= 0xc9))
+		{
+			*to++ = *from++;
+			*to++ = *from++ & 0xfe; // uppercase from small
+		}
+		else *to++ = GetUppercaseData(*from++);
+	}
 	*to = 0;
 	return start;
 }

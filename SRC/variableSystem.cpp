@@ -610,7 +610,8 @@ void Add2UserVariable(char* var, char* moreValue,char* op,char* originalArg)
 	}
 
 	// store result back
-	if (*var == '_')  SetWildCard(result,result,var,0); 
+	if (*var == '_')  
+		SetWildCard(result,result,var,0); 
 	else if (*var == USERVAR_PREFIX) 
 	{
 		char* dot = strchr(var,'.');
@@ -649,30 +650,26 @@ void NoteBotVariables() // system defined variables
 	userVariableIndex = 0;
 }
 
-void MigrateUserVariables(char* above)
+void MigrateUserVariables()
 {
     unsigned int count = userVariableIndex;
     while (count)
     {
         WORDP D = userVariableList[--count]; // 0 based
-        if (!above || D->w.userValue < above) // heap spaces runs DOWN, so this passes more recent entries into here
-        {
-            D->w.userValue = AllocateStack(D->w.userValue,0);
-        }
+        D->w.userValue = AllocateStack(D->w.userValue,0);
+		D->word = AllocateStack(D->word, 0);
     }
 }
 
-void RecoverUserVariables(char* above)
+void RecoverUserVariables()
 {
     unsigned int count = userVariableIndex;
     while (count)
     {
         WORDP D = userVariableList[--count]; // 0 based
-        if (!above || D->w.userValue < above) // heap spaces runs DOWN, so this passes more recent entries into here
-        {
-            D->w.userValue = AllocateHeap(D->w.userValue, 0);
-        }
-    }
+        D->w.userValue = AllocateHeap(D->w.userValue, 0);
+		D->word = AllocateHeap(D->word, 0);
+	}
 }
 
 void ClearUserVariables(char* above) 
@@ -854,11 +851,7 @@ char* PerformAssignment(char* word,char* ptr,char* buffer,FunctionResult &result
 		else if (!*buffer && *op == '=') // null assign to set as a whole
 		{
 			if (*originalWord1 == '^') {;} // presume its a factset function and it has done its job - @0 = next(fact @1fact)
-			else
-			{
-				SET_FACTSET_COUNT(impliedSet,0);
-				factSetNext[impliedSet] = 0;
-			}
+			else SET_FACTSET_COUNT(impliedSet,0);
 		}
 		else if (*buffer == '@') // set to set operator
 		{

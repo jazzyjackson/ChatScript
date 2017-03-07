@@ -751,7 +751,8 @@ bool Match(char* buffer,char* ptr, unsigned int depth, int startposition, char* 
 					if ((trace & TRACE_PATTERN || D->internalBits & MACRO_TRACE)  && CheckTopicTrace()) Log(STDTRACELOG,(char*)")\r\n"); 
 					fnVarBase = callArgumentBase = argStack[functionNest];
 					ptrStack[functionNest++] = ptr+2; // skip closing paren and space
-					ptr = (char*) D->w.fndefinition + 1; // continue processing within the macro, skip argument count
+
+					ptr = (char*)D->w.fndefinition + 1; // continue processing within the macro, skip argument count
 					while (*ptr) // skip over locals list
 					{
 						char word[MAX_WORD_SIZE];
@@ -768,7 +769,7 @@ bool Match(char* buffer,char* ptr, unsigned int depth, int startposition, char* 
 					if (result == NOPROBLEM_BIT) continue;
 				}
 				break;
-          case 0: // end of data (argument or function - never a real rule)
+          case 0: case '`': // end of data (argument or function - never a real rule)
 	           if (argumentText) // return to normal from argument substitution
                 {
                     ptr = argumentText;
@@ -923,10 +924,18 @@ DOUBLELEFT:  case '(': case '[':  case '{': // nested condition (required or opt
 				}
                 else matched = SysVarExists(word);
                 break;
-            case '?': //  question sentence? 
-				ptr = nextTokenStart;
-				if (!word[1]) matched = (tokenFlags & QUESTIONMARK) ? true : false;
-				else matched = false;
+            case '?': //  question sentence? or variable search for 
+				if (word[1] == '$')
+				{
+					strcpy(word, GetUserVariable(word+1));
+					goto matchit;
+				}
+				else
+				{
+					ptr = nextTokenStart;
+					if (!word[1]) matched = (tokenFlags & QUESTIONMARK) ? true : false;
+					else matched = false;
+				}
 	            break;
             case '=': //   a comparison test - never quotes the left side. Right side could be quoted
 				//   format is:  = 1-bytejumpcodeToComparator leftside comparator rightside
@@ -1029,6 +1038,7 @@ DOUBLELEFT:  case '(': case '[':  case '{': // nested condition (required or opt
 				}
 				// drop thru for all other ~
 			default: //   ordinary words, concept/topic, numbers, : and ~ and | and & accelerator
+			matchit:
 				matched = MatchTest(reverse,FindWord(word),(positionEnd < basicStart && firstMatched < 0) ? basicStart : positionEnd,NULL,NULL,
 					statusBits & QUOTE_BIT,uppercasematch,positionStart,positionEnd);
 				if (!matched || !(wildcardSelector & WILDMEMORIZESPECIFIC)) uppercasematch = false;

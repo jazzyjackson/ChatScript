@@ -3,7 +3,7 @@
 > © Bruce Wilcox, gowilcox@gmail.com brilligunderstanding.com
 
 
-> Revision 7/3/2014 cs5.5
+> Revision 3/4/2017 cs7.3
 
 * [Reading Documents](ChatScript-Document-Reader.md#reading-documents)
 * [Memory management with documents](ChatScript-Document-Reader.md#memory-management-with-documents)
@@ -181,12 +181,12 @@ other future use.
 
 If you want to monitor how big a document you can manage, use the stats parameter to
 tell you after each document how much was used up and how much was still available.
-See also `^memorymark()`/`^memoryfree()` for controlling memory use. And be aware that
-setting user variables uses memory. 
+See also `^memorymark()`/`^memoryfree()` for controlling memory use as well as `^memorygc`.
 
+Be aware that setting $ and $$ user variables uses memory. 
 If you set a variable like `$$linecount` for every sentence you read, 
 you are using up text memory on every assignment. You can reduce this
-burden by using the match variables like _19 whenever you can. Match variables above
+burden by using the match variables like _19 or temp variables like `$_tmp`. whenever you can. Match variables above
 _10 are unlikely to ever be used in your patterns, so they can hold temporary data in a
 way that requires no additional memory per assignment. 
 
@@ -285,30 +285,3 @@ The categorization information is output as:
 ```
 [category ] Movie Actors .
 ```
-
-### `^memorymark`()
-Reading a document consists of performing a single volley of the
-entire document. This can tie up a lot of memory in keeping facts, dictionary entries, user
-variables, etc. If you are careful in what you do, you can make the memory burden go
-away. `^memoryMark()` notes where memory is currently at, and is best done within the
-document_pre topic. Then you can release memory after every sentence of the document,
-so it doesn't accumulate.
-
-### `^memoryfree`()
-This releases memory back to the last ^memorymark(). It is best
-done after your main control of the document bot has finished processing a sentence.
-E.g.,
-```
-topic: ~document_pre system repeat()
-t: ^memorymark() # note start
-  Log(OUTPUT_ECHO \n Begin $$document ) # instant display
-
-topic: ~main_control system repeat () # executed each sentence of document
-u: (%document)
-  respond(~filter)
-  ^memoryfree()
-```
-The caveats and warnings about how this works. Whenenver you free memory, the
-system will clear all fact sets. It will clear all user variables set after the memory mark
-(leaving the ones before alone). It will then release facts, text, and dictionary nodes
-created after the mark.

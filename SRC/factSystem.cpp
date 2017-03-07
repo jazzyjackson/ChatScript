@@ -72,31 +72,49 @@ FACT* GetObjectNext(FACT* F) {return Index2Fact(F->objectNext);}
 
 FACT* GetSubjectNondeadNext(FACT* F,bool jsonaccept) 
 { 
+	FACT* G = F;
 	while (F) 
 	{
 		F =  Index2Fact(F->subjectNext);
 		if (F && !UnacceptableFact(F,jsonaccept)) break;
+	}
+	if (F == G)
+	{
+		ReportBug("Infinite loop in GetSubjectNondeadNext ")
+		F = NULL;
 	}
 	return F;
 }
 
 FACT* GetVerbNondeadNext(FACT* F) 
 {
+	FACT* G = F;
 	while (F) 
 	{
 		F =  Index2Fact(F->verbNext);
 		if (F && !UnacceptableFact(F,true)) break;
+	}
+	if (F == G)
+	{
+		ReportBug("Infinite loop in GetVerbNondeadNext ")
+		F = NULL;
 	}
 	return F;
 }
 
 FACT* GetObjectNondeadNext(FACT* F) 
 {
+	FACT* G = F;
 	while (F) 
 	{
 		F =  Index2Fact(F->objectNext);
 		if (F && !UnacceptableFact(F,true)) break;
 	}
+	if (F == G)
+	{
+		ReportBug("Infinite loop in GetObjectNondeadNext ")
+		F = NULL;
+	}	
 	return F;
 }
 
@@ -334,6 +352,117 @@ FACT* SpecialFact(FACTOID_OR_MEANING verb, FACTOID_OR_MEANING object,unsigned in
 	return factFree;
 }
 
+static void ReleaseDictWord(WORDP D,WORDP dictbase)
+{
+	char c = *D->word;
+	// dont erase interally used words
+	if (c == '$' || c == '~' || c == '^' || c == '%' || c == '#') return;
+	if (D >= dictbase) // we dont have to protect this
+	{
+		if (!(D->internalBits & BEEN_HERE) && !GetSubjectNondeadHead(D))
+		{
+			D->word = " "; // kill off its name
+		}
+	}
+}
+
+static void MarkDictWord(WORDP D, WORDP dictbase)
+{ // insure this word is safe from destruction
+	if (D >= dictbase) 
+		D->internalBits |= BEEN_HERE;
+}
+
+void RipFacts(FACT* F,WORDP dictBase)
+{
+	FACT* base = factFree++;
+	while (--factFree > F) // mark all still used new dict words
+	{
+		if (!(F->flags & FACTDEAD))
+		{
+			MarkDictWord(Meaning2Word(factFree->subject), dictBase);
+			MarkDictWord(Meaning2Word(factFree->verb), dictBase);
+			MarkDictWord(Meaning2Word(factFree->object), dictBase);
+		}
+	}
+	factFree = base + 1;
+	while (--factFree > F)
+	{
+		FreeFact(factFree); // remove all links from dict
+		if (F->flags & FACTDEAD) // release 
+		{
+			ReleaseDictWord(Meaning2Word(factFree->subject), dictBase);
+			ReleaseDictWord(Meaning2Word(factFree->verb), dictBase);
+			ReleaseDictWord(Meaning2Word(factFree->object), dictBase);
+		}
+	}
+	factFree = base;
+}
+
+FACT* WeaveFact(FACT* currentFact, unsigned int properties)
+{
+	FACT* F;
+	WORDP s = (properties & FACTSUBJECT) ? NULL : Meaning2Word(currentFact->subject);
+	WORDP v = (properties & FACTVERB) ? NULL : Meaning2Word(currentFact->verb);
+	WORDP o = (properties & FACTOBJECT) ? NULL : Meaning2Word(currentFact->object);
+
+	//   crossreference
+	if (s)
+	{
+		SetSubjectNext(currentFact, GetSubjectHead(currentFact->subject)); // dont use nondead
+		SetSubjectHead(currentFact->subject, currentFact);
+	}
+	else
+	{
+		F = Index2Fact(currentFact->subject);
+		if (F)
+		{
+			SetSubjectNext(currentFact, GetSubjectHead(F));   // dont use nondead
+			SetSubjectHead(F, currentFact);
+		}
+		else return NULL;
+	}
+	if (v)
+	{
+		SetVerbNext(currentFact, GetVerbHead(currentFact->verb));  // dont use nondead
+		SetVerbHead(currentFact->verb, currentFact);
+	}
+	else
+	{
+		F = Index2Fact(currentFact->verb);
+		if (F)
+		{
+			SetVerbNext(currentFact, GetVerbHead(F));  // dont use nondead
+			SetVerbHead(F, currentFact);
+		}
+		else return NULL;
+	}
+	if (o)
+	{
+		SetObjectNext(currentFact, GetObjectHead(currentFact->object));  // dont use nondead
+		SetObjectHead(currentFact->object, currentFact);
+	}
+	else
+	{
+		F = Index2Fact(currentFact->object);
+		if (F)
+		{
+			SetObjectNext(currentFact, GetObjectNext(F));   // dont use nondead
+			SetObjectHead(F, currentFact);
+		}
+		else return NULL;
+	}
+	return currentFact;
+}
+
+void WeaveFacts(FACT* F)
+{
+	while (F <= factFree)
+	{
+		WeaveFact(F,F->flags);
+		++F;
+	}
+}
+
 void AutoKillFact(MEANING M)
 {
 	int id = atoi(Meaning2Word(M)->word);
@@ -407,7 +536,7 @@ void ResetFactSystem(FACT* locked)
 		{
 			if (factSet[i][k] > locked) 
 			{
-				SET_FACTSET_COUNT(i, 0); // empty all facts sets
+				SET_FACTSET_COUNT(i, 0); // empty all facts since set is contaminated
 				break;
 			}
 		}
@@ -611,7 +740,7 @@ bool ExportFacts(char* name, int set,char* append)
 	{
 		if (strstr(name,"ltm")) 
 		{
-			EncryptableFileWrite(base,1,(buffer-base),out,ltmEncrypt); 
+			EncryptableFileWrite(base,1,(buffer-base),out,ltmEncrypt,"LTM"); 
 			userFileSystem.userClose(out);
 		}
 		else
@@ -676,7 +805,7 @@ FunctionResult ExportJson(char* name, char* jsonitem, char* append)
 	ExportJson1(jsonitem, buffer);
 	if (strstr(name,"ltm"))
 	{
-		EncryptableFileWrite(buffer,1,strlen(buffer),out,ltmEncrypt); 
+		EncryptableFileWrite(buffer,1,strlen(buffer),out,ltmEncrypt,"LTM"); 
 		userFileSystem.userClose(out);
 	}
 	else
@@ -878,7 +1007,7 @@ bool ImportFacts(char* buffer,char* name, char* set, char* erase, char* transien
 	size_t readit;
 	if (strstr(name,"ltm"))
 	{
-		readit = DecryptableFileRead(filebuffer,1,userCacheSize,in,ltmEncrypt);	// LTM file read, read it all in, including BOM
+		readit = DecryptableFileRead(filebuffer,1,userCacheSize,in,ltmEncrypt,"LTM");	// LTM file read, read it all in, including BOM
 		userFileSystem.userClose(in);
 	}
 	else
@@ -963,7 +1092,7 @@ void WriteBinaryFacts(FILE* out,FACT* F) //   write out from here to end
 	}
     FClose(out);
 }
-	
+
 FACT* CreateFastFact(FACTOID_OR_MEANING subject, FACTOID_OR_MEANING verb, FACTOID_OR_MEANING object, unsigned int properties)
 {
 	//   get correct field values
@@ -986,7 +1115,6 @@ FACT* CreateFastFact(FACTOID_OR_MEANING subject, FACTOID_OR_MEANING verb, FACTOI
 	}
 
 	//   allocate a fact
-	FACT* F;
 	if (++factFree == factEnd) 
 	{
 		--factFree;
@@ -1004,64 +1132,11 @@ FACT* CreateFastFact(FACTOID_OR_MEANING subject, FACTOID_OR_MEANING verb, FACTOI
 	currentFact->object = object;
 	currentFact->flags = properties;
 	currentFact->botBits = myBot; // this fact is visible to these bot ids (0 or -1 means all)
-
-	//   crossreference
-	if (s) 
+	currentFact = WeaveFact(currentFact,properties);
+	if (!currentFact)
 	{
-		SetSubjectNext(currentFact,GetSubjectHead(subject)); // dont use nondead
-		SetSubjectHead(subject,currentFact);
-	}
-	else 
-	{
-		F = Index2Fact(currentFact->subject);
-		if (F)
-		{	
-			SetSubjectNext(currentFact,GetSubjectHead(F));   // dont use nondead
-			SetSubjectHead(F,currentFact);
-		}
-		else
-		{
-			--factFree;
-			return NULL;
-		}
-	}
-	if (v) 
-	{
-		SetVerbNext(currentFact, GetVerbHead(verb));  // dont use nondead
-		SetVerbHead(verb,currentFact);
-	}
-	else 
-	{
-		F = Index2Fact(currentFact->verb);
-		if (F)
-		{
-			SetVerbNext(currentFact,GetVerbHead(F));  // dont use nondead
-			SetVerbHead(F,currentFact);
-		}
-		else
-		{
-			--factFree;
-			return NULL;
-		}
-	}
-	if (o) 
-	{
-		SetObjectNext(currentFact, GetObjectHead(object));  // dont use nondead
-		SetObjectHead(object,currentFact);
-	}
-	else
-	{
-		F = Index2Fact(currentFact->object);
-		if (F)
-		{
-			SetObjectNext(currentFact,GetObjectNext(F));   // dont use nondead
-			SetObjectHead(F,currentFact);
-		}
-		else
-		{
-			--factFree;
-			return NULL;
-		}
+		--factFree;
+		return NULL;
 	}
 
 	if (planning) currentFact->flags |= FACTTRANSIENT;
@@ -1342,7 +1417,7 @@ FACT* ReadFact(char* &ptr, unsigned int build)
 	}
 	else  object = ReadMeaning(objectname,true,true);
 	ReleaseStack(subjectname);
-	
+	uint64 oldbot = myBot;
 	myBot = 0; // no owner by default unless read in by fact
 	if (*ptr && *ptr != ')') ptr = ReadInt64(ptr,(int64&)myBot); // read bot bits
 
@@ -1351,6 +1426,7 @@ FACT* ReadFact(char* &ptr, unsigned int build)
 	
 	if (*ptr == ')') ++ptr;	// skip over ending )
 	ptr = SkipWhitespace(ptr);
+	myBot = oldbot;
     return F;
 }
 

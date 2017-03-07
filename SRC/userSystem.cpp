@@ -84,7 +84,8 @@ void Login(char* caller,char* usee,char* ip) //   select the participants
 	char* ptr = caller-1;
 	while (*++ptr) 
 	{
-		if (!IsAlphaUTF8OrDigit(*ptr) && *ptr != '-' && *ptr != '+' && *ptr != '.' && *ptr != '@') *ptr = '_'; // require simple file names
+		if (*ptr == '/'  || *ptr == '?' || *ptr == '\\' || *ptr == '%' || *ptr == '*' || *ptr == ':'
+			|| *ptr == '|' || *ptr == '"' || *ptr == '<' || *ptr == '>') *ptr = '_';
 	}
 
     //   prepare for chat
@@ -560,6 +561,7 @@ void WriteUserData(time_t curr)
 	char filename[SMALL_WORD_SIZE];
 	// NOTE mongo does not allow . in a filename
 	sprintf(name,(char*)"%s/%stopic_%s_%s.txt",users,GetUserPath(loginID),loginID,computerID);
+	if (stricmp(language,"english")) sprintf(name, (char*)"%s/%stopic_%s_%s_%s.txt", users, GetUserPath(loginID), loginID, computerID,language);
 	strcpy(filename,name);
 	strcat(filename,"\r\n");
 	userDataBase = FindUserCache(name); // have a buffer dedicated to him? (cant be safe with what was read in, because share involves 2 files)
@@ -575,7 +577,7 @@ void WriteUserData(time_t curr)
 	{
 		char fname[MAX_WORD_SIZE];
 		sprintf(fname,(char*)"TMP/backup-%s_%s.bin",loginID,computerID);
-		CopyFile2File(fname,userDataBase,false);	// backup for debugging BUT NOT if callback of some kind...
+		CopyFile2File(fname, name,false);	// backup for debugging BUT NOT if callback of some kind...
 		if (redo) // multilevel backup enabled
 		{
 			sprintf(fname,(char*)"TMP/backup%d-%s_%s.bin",volleyCount,loginID,computerID);
@@ -589,6 +591,7 @@ void WriteUserData(time_t curr)
 	if (ptr && shared)
 	{
 		sprintf(name,(char*)"%s/%stopic_%s_%s.txt",users,GetUserPath(loginID),loginID,(char*)"share");
+		if (stricmp(language,"english")) sprintf(name, (char*)"%s/%stopic_%s_%s_%s.txt", users, GetUserPath(loginID), loginID, language,(char*)"share");
 		strcpy(filename,name);
 		strcat(filename,"\r\n");
 		userDataBase = FindUserCache(name); // have a buffer dedicated to him? (cant be safe with what was read in, because share involves 2 files)
@@ -720,6 +723,7 @@ void KillShare()
 	{
 		char buffer[MAX_WORD_SIZE];
 		sprintf(buffer,(char*)"%s/%stopic_%s_%s.txt",users,GetUserPath(loginID),loginID,(char*)"share");
+		if (stricmp(language,"english")) sprintf(buffer, (char*)"%s/%stopic_%s_%s_%s.txt", users, GetUserPath(loginID), loginID, language,(char*)"share");
 		unlink(buffer); // remove all shared data of this user
 	}
 }

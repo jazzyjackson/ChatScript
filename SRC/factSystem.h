@@ -56,6 +56,8 @@ FACTOID Fact2Index(FACT* F);
 FACT* Index2Fact(FACTOID e);
 inline FACTOID currentFactIndex() { return (currentFact) ? (FACTOID)((currentFact - factBase)) : 0;}
 FACT* FactTextIndex2Fact(char* word);
+void RipFacts(FACT* F,WORDP dictbase);
+void WeaveFacts(FACT* F);
 
 // fact system startup and shutdown
 void InitFacts();

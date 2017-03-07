@@ -1,6 +1,6 @@
 #include "common.h" 
 #include "evserver.h"
-char* version = "7.2";
+char* version = "7.3";
 char sourceInput[200];
 FILE* userInitFile;
 int externalTagger = 0;
@@ -15,10 +15,8 @@ bool pendingRestart = false;
 bool pendingUserReset = false;
 bool assignedLogin = false;
 char apikey[100];
-int sentencePreparationIndex = 0;
 DEBUGAPI debugInput = NULL;
 DEBUGAPI debugOutput = NULL;
-int lastRestoredIndex = 0;
 #define MAX_RETRIES 20
 clock_t startTimeInfo;							// start time of current volley
 char revertBuffer[INPUT_BUFFER_SIZE];			// copy of user input so can :revert if desired
@@ -297,7 +295,7 @@ void CreateSystem()
 			if (*bootcmd == '"') 
 			{
 				++at;
-				if (bootcmd[strlen(at)-1] == '"')  bootcmd[strlen(at)-1]  = 0;
+				if (at[strlen(at)-1] == '"')  at[strlen(at)-1]  = 0;
 			}
 			DoCommand(at,NULL,false);
 		}
@@ -407,9 +405,6 @@ void CreateSystem()
 		Log(SERVERLOG,(char*)"    *** Server WIDE OPEN to :command use.\r\n");
 	}
 #endif
-#ifdef DISCARDDICTIONARYBUILD
-	printf((char*)"%s",(char*)"    Dictionary building disabled.\r\n");
-#endif
 #ifdef DISCARDJSON
 	printf((char*)"%s",(char*)"    JSON access disabled.\r\n");
 #endif
@@ -482,6 +477,7 @@ static void ProcessArgument(char* arg)
 	else if (!stricmp(arg,"noboot")) noboot = true;
 	else if (!strnicmp(arg,(char*)"apikey=",7)) strcpy(apikey,arg+7);
 	else if (!strnicmp(arg,(char*)"logsize=",8)) logsize = atoi(arg+8); // bytes avail for log buffer
+	else if (!strnicmp(arg, (char*)"loglimit=", 9)) loglimit = atoi(arg + 9); // max mb of log file before change files
 	else if (!strnicmp(arg,(char*)"outputsize=",11)) outputsize = atoi(arg+11); // bytes avail for log buffer
 	else if (!stricmp(arg, (char*)"time")) timing = (unsigned int)-1 ^ TIME_ALWAYS;
 	else if (!strnicmp(arg,(char*)"bootcmd=",8)) strcpy(bootcmd,arg+8); 
@@ -822,7 +818,8 @@ unsigned int InitSystem(int argcx, char * argvx[],char* unchangedPath, char* rea
 #endif
 	EncryptInit(encryptParams);
 	DecryptInit(decryptParams);
-	LockLayer(1,false); 
+	ResetEncryptTags();
+	LockLayer(1, false);
 	return 0;
 }
 
@@ -1084,8 +1081,13 @@ inputRetry:
 				if (echoSource == SOURCE_ECHO_USER) printf((char*)"< %s\r\n",ourMainInputBuffer);
 			}
 		}
-		if (!server && extraTopicData) turn = PerformChatGivenTopic(loginID,computerID,ourMainInputBuffer,NULL,ourMainOutputBuffer,extraTopicData); 
-		else turn = PerformChat(loginID,computerID,ourMainInputBuffer,NULL,ourMainOutputBuffer); // no ip
+		if (!server && extraTopicData)
+		{
+			turn = PerformChatGivenTopic(loginID, computerID, ourMainInputBuffer, NULL, ourMainOutputBuffer, extraTopicData);
+			free(extraTopicData);
+			extraTopicData = NULL;
+		}
+		else turn = PerformChat(loginID, computerID, ourMainInputBuffer, NULL, ourMainOutputBuffer); // no ip
 		if (turn == PENDING_RESTART) Restart();
 	}
 	if (sourceFile != stdin) 
@@ -1138,8 +1140,6 @@ void ResetToPreUser() // prepare for multiple sentences being processed - data l
 	inputCounter = 0;
 	totalCounter = 0;
 	itAssigned = theyAssigned = 0;
-	memset(wordStarts,0,sizeof(char*)*MAX_SENTENCE_LENGTH); // reinit for new volley - sharing of word space can occur throughout this volley
-	ClearWhereInSentence();
 	ResetTokenSystem();
 
 	//  Revert to pre user-loaded state, fresh for a new user
@@ -1156,7 +1156,6 @@ void ResetToPreUser() // prepare for multiple sentences being processed - data l
 
 void ResetSentence() // read for next sentence to process from raw system level control only
 {
-	ClearWhereInSentence(); 
 	ResetFunctionSystem();
 	respondLevel = 0; 
 	currentRuleID = NO_REJOINDER;	//   current rule id
@@ -1415,6 +1414,7 @@ int PerformChat(char* user, char* usee, char* incoming,char* ip,char* output) //
 	InitJSONNames(); // reset indices for this volley
 #endif
 	ClearVolleyWordMaps();
+	ResetEncryptTags();
 	mainInputBuffer = incoming;
 	mainOutputBuffer = output;
 	size_t len = strlen(incoming);
@@ -1671,6 +1671,7 @@ void Restart()
 #endif
 	EncryptInit(encryptParams);
 	DecryptInit(decryptParams);
+	ResetEncryptTags();
 
 	if (!server)
 	{
@@ -1689,8 +1690,6 @@ void Restart()
 
 int ProcessInput(char* input)
 {
-	lastRestoredIndex = 0;
-	sentencePreparationIndex = 0;	// set id for save/restore sentence optimization
 	startTimeInfo =  ElapsedMilliseconds();
 	// aim to be able to reset some global data of user
 	unsigned int oldInputSentenceCount = inputSentenceCount;
@@ -2111,6 +2110,21 @@ bool HasAlreadySaid(char* msg)
     return false;
 }
 
+void FlipResponses()
+{
+	for (int i = 0; i < responseIndex; ++i)
+	{
+		if (InHeap(responseData[i].response))
+		{
+			responseData[i].response = AllocateStack(responseData[i].response, 0);
+		}
+		else
+		{
+			responseData[i].response = AllocateHeap(responseData[i].response, 0);
+		}
+	}
+}
+
 static void SaveResponse(char* msg)
 {
 	responseData[responseIndex].response = AllocateHeap(msg,0);
@@ -2128,7 +2142,7 @@ static void SaveResponse(char* msg)
 	// now mark rule as used up if we can since it generated text
 	SetErase(true); // top level rules can erase whenever they say something
 	
-	if (showWhy) Log(ECHOSTDTRACELOG,(char*)"\n  => %s %s %d.%d  %s\r\n",(!UsableRule(currentTopicID,currentRuleID)) ? (char*)"-" : (char*)"", GetTopicName(currentTopicID,false),TOPLEVELID(currentRuleID),REJOINDERID(currentRuleID),ShowRule(currentRule));
+	if (showWhy) Log(ECHOSTDTRACELOG,(char*)"\r\n  => %s %s %d.%d  %s\r\n",(!UsableRule(currentTopicID,currentRuleID)) ? (char*)"-" : (char*)"", GetTopicName(currentTopicID,false),TOPLEVELID(currentRuleID),REJOINDERID(currentRuleID),ShowRule(currentRule));
 }
 
 char* SkipOOB(char* buffer)
@@ -2219,10 +2233,140 @@ bool AddResponse(char* msg, unsigned int responseControl)
 	return true;
 }
 
+void NLPipeline(int mytrace)
+{
+	char* original[MAX_SENTENCE_LENGTH];
+	if (mytrace & TRACE_PREPARE || prepareMode) memcpy(original + 1, wordStarts + 1, wordCount * sizeof(char*));	// replicate for test
+	int originalCount = wordCount;
+	if (tokenControl & (DO_SUBSTITUTE_SYSTEM | DO_PRIVATE) && !oobExists)
+	{
+		// test for punctuation not done by substitutes (eg "?\")
+		char c = (wordCount) ? *wordStarts[wordCount] : 0;
+		if ((c == '?' || c == '!') && wordStarts[wordCount])
+		{
+			char* tokens[3];
+			tokens[1] = AllocateHeap(wordStarts[wordCount], 1, 1);
+			ReplaceWords("Remove ?!", wordCount, 1, 1, tokens);
+		}
+
+		// test for punctuation badly done at end (eg "?\")
+		ProcessSubstitutes();
+		if (mytrace & TRACE_PREPARE || prepareMode == PREPARE_MODE)
+		{
+			int changed = 0;
+			if (wordCount != originalCount) changed = true;
+			for (int i = 1; i <= wordCount; ++i)
+			{
+				if (original[i] != wordStarts[i])
+				{
+					changed = i;
+					break;
+				}
+			}
+			if (changed)
+			{
+				Log(STDTRACELOG, (char*)"Substituted (");
+				if (tokenFlags & DO_ESSENTIALS) Log(STDTRACELOG, "essentials ");
+				if (tokenFlags & DO_SUBSTITUTES) Log(STDTRACELOG, "substitutes ");
+				if (tokenFlags & DO_CONTRACTIONS) Log(STDTRACELOG, "contractions ");
+				if (tokenFlags & DO_INTERJECTIONS) Log(STDTRACELOG, "interjections ");
+				if (tokenFlags & DO_BRITISH) Log(STDTRACELOG, "british ");
+				if (tokenFlags & DO_SPELLING) Log(STDTRACELOG, "spelling ");
+				if (tokenFlags & DO_TEXTING) Log(STDTRACELOG, "texting ");
+				if (tokenFlags & DO_NOISE) Log(STDTRACELOG, "noise ");
+				if (tokenFlags & DO_PRIVATE) Log(STDTRACELOG, "private ");
+				if (tokenFlags & NO_CONDITIONAL_IDIOM) Log(STDTRACELOG, "conditional idiom ");
+				Log(STDTRACELOG, (char*)") into: ");
+				for (int i = 1; i <= wordCount; ++i) Log(STDTRACELOG, (char*)"%s  ", wordStarts[i]);
+				Log(STDTRACELOG, (char*)"\r\n");
+				memcpy(original + 1, wordStarts + 1, wordCount * sizeof(char*));	// replicate for test
+			}
+			originalCount = wordCount;
+		}
+	}
+
+	// if 1st token is an interjection DO NOT allow this to be a question
+	if (wordCount && wordStarts[1] && *wordStarts[1] == '~' && !(tokenControl & NO_INFER_QUESTION))
+		tokenFlags &= -1 ^ QUESTIONMARK;
+
+	// special lowercasing of 1st word if it COULD be AUXVERB and is followed by pronoun - avoid DO and Will and other confusions
+	if (wordCount > 1 && IsUpperCase(*wordStarts[1]) && !oobExists)
+	{
+		WORDP X = FindWord(wordStarts[1], 0, LOWERCASE_LOOKUP);
+		if (X && X->properties & AUX_VERB)
+		{
+			WORDP Y = FindWord(wordStarts[2]);
+			if (Y && Y->properties & PRONOUN_BITS) wordStarts[1] = X->word;
+		}
+	}
+
+	int i, j;
+	for (i = 1; i <= wordCount; ++i)  originalCapState[i] = IsUpperCase(*wordStarts[i]); // note cap state
+	if (mytrace & TRACE_PREPARE || prepareMode == PREPARE_MODE)
+	{
+		int changed = 0;
+		if (wordCount != originalCount) changed = true;
+		for (j = 1; j <= wordCount; ++j) if (original[j] != wordStarts[j]) changed = j;
+		if (changed)
+		{
+			if (tokenFlags & DO_PROPERNAME_MERGE) Log(STDTRACELOG, (char*)"Name-");
+			if (tokenFlags & DO_NUMBER_MERGE) Log(STDTRACELOG, (char*)"Number-");
+			if (tokenFlags & DO_DATE_MERGE) Log(STDTRACELOG, (char*)"Date-");
+			Log(STDTRACELOG, (char*)"merged: ");
+			for (i = 1; i <= wordCount; ++i) Log(STDTRACELOG, (char*)"%s  ", wordStarts[i]);
+			Log(STDTRACELOG, (char*)"\r\n");
+			memcpy(original + 1, wordStarts + 1, wordCount * sizeof(char*));	// replicate for test
+			originalCount = wordCount;
+		}
+	}
+
+	// spell check unless 1st word is already a known interjection. Will become standalone sentence
+	if (tokenControl & DO_SPELLCHECK && wordCount && *wordStarts[1] != '~' && !oobExists)
+	{
+		if (SpellCheckSentence()) tokenFlags |= DO_SPELLCHECK;
+		if (mytrace & TRACE_PREPARE || prepareMode == PREPARE_MODE)
+		{
+			int changed = 0;
+			if (wordCount != originalCount) changed = true;
+			for (i = 1; i <= wordCount; ++i)
+			{
+				if (original[i] != wordStarts[i])
+				{
+					original[i] = wordStarts[i];
+					changed = i;
+				}
+			}
+			if (changed)
+			{
+				Log(STDTRACELOG, (char*)"Spelling changed into: ");
+				for (i = 1; i <= wordCount; ++i) Log(STDTRACELOG, (char*)"%s  ", wordStarts[i]);
+				Log(STDTRACELOG, (char*)"\r\n");
+			}
+			originalCount = wordCount;
+		}
+
+		if (tokenControl & (DO_SUBSTITUTE_SYSTEM | DO_PRIVATE))  ProcessSubstitutes();
+		if (mytrace & TRACE_PREPARE || prepareMode == PREPARE_MODE)
+		{
+			int changed = 0;
+			if (wordCount != originalCount) changed = true;
+			for (i = 1; i <= wordCount; ++i) if (original[i] != wordStarts[i]) changed = i;
+			if (changed)
+			{
+				Log(STDTRACELOG, (char*)"Substitution changed into: ");
+				for (i = 1; i <= wordCount; ++i) Log(STDTRACELOG, (char*)"%s  ", wordStarts[i]);
+				Log(STDTRACELOG, (char*)"\r\n");
+			}
+		}
+	}
+	if (tokenControl & DO_PROPERNAME_MERGE && wordCount && !oobExists)  ProperNameMerge();
+	if (tokenControl & DO_DATE_MERGE && wordCount && !oobExists)  ProcessCompositeDate();
+	if (tokenControl & DO_NUMBER_MERGE && wordCount && !oobExists)  ProcessCompositeNumber(); //   numbers AFTER titles, so they dont change a title
+	if (tokenControl & DO_SPLIT_UNDERSCORE && !oobExists)  ProcessSplitUnderscores();
+}
+
 void PrepareSentence(char* input,bool mark,bool user, bool analyze,bool oobstart,bool atlimit) // set currentInput and nextInput
 {
-	lastRestoredIndex = ++sentencePreparationIndex; // an id marker
-	char* original[MAX_SENTENCE_LENGTH];
 	unsigned int mytrace = trace;
 	clock_t start_time = ElapsedMilliseconds();
 	if (prepareMode == PREPARE_MODE) mytrace = 0;
@@ -2316,135 +2460,10 @@ void PrepareSentence(char* input,bool mark,bool user, bool analyze,bool oobstart
 		for (int i = 1; i <= wordCount; ++i) Log(STDTRACELOG,(char*)"%s  ",wordStarts[i]);
 		Log(STDTRACELOG,(char*)"\r\n");
 	}
-	int originalCount = wordCount;
-	if (mytrace & TRACE_PREPARE || prepareMode) memcpy(original+1,wordStarts+1,wordCount * sizeof(char*));	// replicate for test
-
-	if (tokenControl & (DO_SUBSTITUTE_SYSTEM|DO_PRIVATE)  && !oobExists)  
-	{
-		// test for punctuation not done by substitutes (eg "?\")
-		char c = (wordCount) ? *wordStarts[wordCount] : 0;
-		if ((c == '?' || c == '!') && wordStarts[wordCount])  
-		{
-			char* tokens[3];
-			tokens[1] = AllocateHeap(wordStarts[wordCount],1,1);
-			ReplaceWords("Remove ?!",wordCount,1,1,tokens);
-		}  
-
-		// test for punctuation badly done at end (eg "?\")
-		ProcessSubstitutes();
- 		if (mytrace & TRACE_PREPARE || prepareMode == PREPARE_MODE)
-		{
-			int changed = 0;
-			if (wordCount != originalCount) changed = true;
-			for (int i = 1; i <= wordCount; ++i) 
-			{
-				if (original[i] != wordStarts[i]) 
-				{
-					changed = i;
-					break;
-				}
-			}
-			if (changed)
-			{
-				Log(STDTRACELOG,(char*)"Substituted (");
-				if (tokenFlags & DO_ESSENTIALS) Log(STDTRACELOG, "essentials ");
-				if (tokenFlags & DO_SUBSTITUTES) Log(STDTRACELOG, "substitutes ");
-				if (tokenFlags & DO_CONTRACTIONS) Log(STDTRACELOG, "contractions ");
-				if (tokenFlags & DO_INTERJECTIONS) Log(STDTRACELOG, "interjections ");
-				if (tokenFlags & DO_BRITISH) Log(STDTRACELOG, "british ");
-				if (tokenFlags & DO_SPELLING) Log(STDTRACELOG, "spelling ");
-				if (tokenFlags & DO_TEXTING) Log(STDTRACELOG, "texting ");
-				if (tokenFlags & DO_NOISE) Log(STDTRACELOG, "noise ");
-				if (tokenFlags & DO_PRIVATE) Log(STDTRACELOG, "private ");
-				Log(STDTRACELOG,(char*)") into: ");
-				for (int i = 1; i <= wordCount; ++i) Log(STDTRACELOG,(char*)"%s  ",wordStarts[i]);
-				Log(STDTRACELOG,(char*)"\r\n");
-				memcpy(original+1,wordStarts+1,wordCount * sizeof(char*));	// replicate for test
-			}
-			originalCount = wordCount;
-		}
-	}
 	
-	// if 1st token is an interjection DO NOT allow this to be a question
-	if (wordCount && wordStarts[1] && *wordStarts[1] == '~' && !(tokenControl & NO_INFER_QUESTION)) 
-		tokenFlags &= -1 ^ QUESTIONMARK;
-
-	// special lowercasing of 1st word if it COULD be AUXVERB and is followed by pronoun - avoid DO and Will and other confusions
-	if (wordCount > 1 && IsUpperCase(*wordStarts[1])  && !oobExists)
-	{
-		WORDP X = FindWord(wordStarts[1],0,LOWERCASE_LOOKUP);
-		if (X && X->properties & AUX_VERB)
-		{
-			WORDP Y = FindWord(wordStarts[2]);
-			if (Y && Y->properties & PRONOUN_BITS) wordStarts[1] = X->word;
-		}
-	}
-
-	int i,j;
- 	for (i = 1; i <= wordCount; ++i)  originalCapState[i] = IsUpperCase(*wordStarts[i]); // note cap state
- 	if (mytrace & TRACE_PREPARE || prepareMode == PREPARE_MODE) 
-	{
-		int changed = 0;
-		if (wordCount != originalCount) changed = true;
-		for (j = 1; j <= wordCount; ++j) if (original[j] != wordStarts[j]) changed = j;
-		if (changed)
-		{
-			if (tokenFlags & DO_PROPERNAME_MERGE) Log(STDTRACELOG,(char*)"Name-");
-			if (tokenFlags & DO_NUMBER_MERGE) Log(STDTRACELOG,(char*)"Number-");
-			if (tokenFlags & DO_DATE_MERGE) Log(STDTRACELOG,(char*)"Date-");
-			Log(STDTRACELOG,(char*)"merged: ");
-			for (i = 1; i <= wordCount; ++i) Log(STDTRACELOG,(char*)"%s  ",wordStarts[i]);
-			Log(STDTRACELOG,(char*)"\r\n");
-			memcpy(original+1,wordStarts+1,wordCount * sizeof(char*));	// replicate for test
-			originalCount = wordCount;
-		}
-	}
-
-	// spell check unless 1st word is already a known interjection. Will become standalone sentence
-	if (tokenControl & DO_SPELLCHECK && wordCount && *wordStarts[1] != '~'  && !oobExists)  
-	{
-		if (SpellCheckSentence()) tokenFlags |= DO_SPELLCHECK;
-		if (mytrace & TRACE_PREPARE || prepareMode == PREPARE_MODE)
-		{
- 			int changed = 0;
-			if (wordCount != originalCount) changed = true;
-            for (i = 1; i <= wordCount; ++i)
-            {
-                if (original[i] != wordStarts[i])
-                {
-                    original[i] = wordStarts[i];
-                    changed = i;
-                }
-            }
-			if (changed)
-			{
-				Log(STDTRACELOG,(char*)"Spelling changed into: ");
-				for (i = 1; i <= wordCount; ++i) Log(STDTRACELOG,(char*)"%s  ",wordStarts[i]);
-				Log(STDTRACELOG,(char*)"\r\n");
-			}
-            originalCount = wordCount;
-		}
-        if (tokenControl & (DO_SUBSTITUTE_SYSTEM | DO_PRIVATE))  ProcessSubstitutes();
-        if (mytrace & TRACE_PREPARE || prepareMode == PREPARE_MODE)
-        {
-            int changed = 0;
-            if (wordCount != originalCount) changed = true;
-            for (i = 1; i <= wordCount; ++i) if (original[i] != wordStarts[i]) changed = i;
-            if (changed)
-            {
-                Log(STDTRACELOG, (char*)"Substitution changed into: ");
-                for (i = 1; i <= wordCount; ++i) Log(STDTRACELOG, (char*)"%s  ", wordStarts[i]);
-                Log(STDTRACELOG, (char*)"\r\n");
-            }
-        }
-	}
-	if (tokenControl & DO_PROPERNAME_MERGE && wordCount  && !oobExists)  ProperNameMerge();   
-	if (tokenControl & DO_DATE_MERGE && wordCount  && !oobExists)  ProcessCompositeDate();   
- 	if (tokenControl & DO_NUMBER_MERGE && wordCount && !oobExists)  ProcessCompositeNumber(); //   numbers AFTER titles, so they dont change a title
-	if (tokenControl & DO_SPLIT_UNDERSCORE &&  !oobExists)  ProcessSplitUnderscores(); 
-	
+	NLPipeline(mytrace);
 	if (!analyze) nextInput = ptr;	//   allow system to overwrite input here
-
+	int i, j;
 	if (tokenControl & DO_INTERJECTION_SPLITTING && wordCount > 1 && *wordStarts[1] == '~') // interjection. handle as own sentence
 	{
 		// formulate an input insertion

@@ -1,7 +1,7 @@
 # ChatScript System Variables and Engine-defined Concepts
 © Bruce Wilcox, gowilcox@gmail.com www.brilligunderstanding.com
-<br>Revision 2/09/2017 cs7.2
-<br>
+
+> Revision 3/4/2017 cs7.3
 
 * [Engine-defined Concepts](ChatScript-System-Variables-and-Engine-defined-Concepts.md#engine-defined-concepts)
 * [System Variables](ChatScript-System-Variables-and-Engine-defined-Concepts.md#system-variables)
@@ -318,6 +318,8 @@ your server is in Virginia and you are in Colorado).
 | `%httpresponse`     |  return code of most recent ^jsonopen call | 
 | `%pid`              |  Linux process id or 0 for other systems | 
 | `%restart`          |  You can set and retrieve a value here across a system restart. | 
+| `%timeout`          |  Boolean tells if a timeout has happened, based on the timelimit command line parameter | 
+
 
 
 ## Build data+
@@ -393,6 +395,7 @@ The next changes do not echo into %tokenFlags and relate to grammar of input:
 | `DO_POSTAG`             |  allow pos-tagging (labels like ~noun ~verb become marked) |
 | `DO_PARSE`              |  allow parser (labels for word roles like ~main_subject) |
 | `DO_CONDITIONAL_POSTAG` |  perform pos-tagging only if all words are known. Avoids wasting time on foreign sentences in particular |
+| `NO_CONDITIONAL_IDIOM` |  will not perform substitutions in the dictionary which are considered conditional idioms |
 |  `NO_ERASE`             |  where a substitution would delete a word entirely as junk, don't |
 | `DO_SPLIT_UNDERSCORES`  |  happens after all other input tokenization and adjustments except number merge, and separates words that have been conjoined either because the dictionary has them (_credit_card_) or because they were merged by proper name merging, or by substitution. The result is only words without underscores (excluding number words like _five_thousand_and_four_ | 
 | `MARK_LOWER`            |  if a word is considered a proper name in CS and is marked as an upper case word, this will force it to perform any markings for its lower case form as well. Sometimes users type stuff in upper case that really should be lower | 

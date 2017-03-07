@@ -13,13 +13,6 @@ greenwash
 ashame
 n00b
 multi
-lmao
-lmfao
-roflcopter
-roflmao
-rotfl
-rotflmfao
-rotflol
 asshat
 clusterfuck
 cockfucker
@@ -327,7 +320,6 @@ puniceous
 vermeil
 surroundings
 clamhead
-hebe
 hebro
 higger
 muzzie
@@ -421,6 +413,7 @@ bc
 noontime
 coleopter
 paraglider
+roflcopter
 quadcycle
 sportscar
 tobaggan
@@ -431,4 +424,5 @@ disruptor
 raygun
 gewurztrauminer
 viognier
+ys
 sign-up

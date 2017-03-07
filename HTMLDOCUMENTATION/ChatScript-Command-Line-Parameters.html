@@ -13,7 +13,7 @@
 <p>Copyright Bruce Wilcox, gowilcox@gmail.com brilligunderstanding.com</p>
 </blockquote>
 <blockquote>
-<p>Revision 2/09/2017 cs7.2</p>
+<p>Revision 3/4/2017 cs7.3</p>
 </blockquote>
 <h1 id="command-line-parameters">Command Line Parameters</h1>
 <p>You can give parameters on the run command or in a config file. The default config file is <code>cs_init.txt</code> at the top level of CS (if the file exists). Or you can name where the file is on a command line parameter <code>config=xxx</code>. Config file data are command line parameters, 1 per line, like below:</p>
@@ -205,6 +205,10 @@ port=20</code></pre>
 <tr class="even">
 <td><code>noboot</code></td>
 <td>Do not run any boot script on engine startup</td>
+</tr>
+<tr class="odd">
+<td><code>logsize=n</code></td>
+<td>When server log file exceeds n megabytes, rename it and start with a new file.</td>
 </tr>
 </tbody>
 </table>

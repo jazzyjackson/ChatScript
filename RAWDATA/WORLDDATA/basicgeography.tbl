@@ -146,8 +146,6 @@ Vietnam Vietnamese
 "Republic of Zimbabwe" English
 
 
-concept: ~nationalities()
-
 table: ~country (^nationality ^nation ) # also concept: ~Nationalities
 ^createfact(^nation member ~country)
 ^createfact(^nationality member ~nationalities)
@@ -204,11 +202,11 @@ concept: ~capital()
 
 table: ~capital (^base ^city)
 #_7 = join(^city _ , _ ^base)
-^addproperty(^base  NOUN_PROPER_SINGULAR NOUN LOCATIONWORD ALWAYS_PROPER_NAME_MERGE)
+^addproperty(^base  NOUN_PROPER_SINGULAR NOUN LOCATIONWORD )
 ^createfact(^city part ^base)
 ^createfact(^city member ~capital)
 ^createfact(^city  member  ~city)
-^addproperty(^city  NOUN_PROPER_SINGULAR NOUN LOCATIONWORD ALWAYS_PROPER_NAME_MERGE)
+^addproperty(^city  NOUN_PROPER_SINGULAR NOUN LOCATIONWORD NO_PROPER_MERGE)
 
 DATA:
 

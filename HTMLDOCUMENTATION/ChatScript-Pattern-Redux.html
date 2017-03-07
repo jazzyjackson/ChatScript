@@ -13,7 +13,7 @@
 <p>© Bruce Wilcox, gowilcox@gmail.com</p>
 </blockquote>
 <blockquote>
-<p>Revision 1/1/2017 cs7.0</p>
+<p>Revision 3/4/2017 cs7.3</p>
 </blockquote>
 <p>Pattern matching information was introduced in the Beginner manual and expanded in the Advanced Manual. Since pattern matching is of such importance, this concise manual lists everything about patterns in one place. Note, despite the extraordinary range of weird matching abilities, almost all of my normal code is based on one of three patterns:</p>
 <pre><code># rule 1 
@@ -130,11 +130,13 @@ u: (~ten_thousand_names_of_fruits)</code></pre>
 <p><code>&amp;</code> - bit anded results in non-zero</p>
 <p><code>?</code> - is member of 2nd arg concept or topic</p>
 <p><code>?</code> - if no argument occurs after, means is value found in sentence</p>
+<p>Comparing two text strings (not numbers) will do it based on case-independent alpha sorting.</p>
 <p>Note: You can put <code>!</code> before the tokens instead of using <code>!=</code> and <code>!?</code>. E.g.,</p>
 <pre><code>u: ( _~noun !_0?~fruit) if the noun is not in fruit concept</code></pre>
 <p>The stand-alone <code>?</code> is used with variables for dynamic matching. While you cannot do memorization in front of a comparison (because no positional data is gained) you can in front of the ? operator since finding where in the sentence something is will return a position for memorization.</p>
 <p><code>u: ( $var? )</code> means is the value of <code>$var</code> found in the sentence anywhere</p>
 <p>Note that when <code>$var</code> is a normal word, that is simple for CS to handle. If <code>$var</code> is a phrase, then generally CS cannot match it. This is because for phrases, CS needs to know in advance that a phrase can be matched. If you put <em>take a seat</em> as a keyword in a concept or topic or pattern, that phrase is stored in the dictionary and marked as a pattern phrase, meaning if the phrase is ever seen in a sentence, it should be noticed and marked so it can be matched in a pattern. But if it is merely in a variable, then the dictionary is unaware of the phrase and so <code>$var?</code> will not work for it.</p>
+<p>There is also a ?$var form, which means see if the value of the variable is findable. The value can be either a word or a concept name.</p>
 <h3 id="escape--">Escape - <code>\</code></h3>
 <p>If you want to match a reserved punctuation symbol like <code>[</code> or <code>(</code>, you must escape it by putting a backslash in front. This is commonly done in matching out-of-band information.</p>
 <pre><code>u: (&lt; \[ * \] ) ^respond(~determine_oob)</code></pre>

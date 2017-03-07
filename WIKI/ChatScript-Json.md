@@ -2,7 +2,7 @@
 
 > © Bruce Wilcox, gowilcox@gmail.com brilligunderstanding.com
 
-> Revision 2/9/2017 cs7.2
+> Revision 3/4/2017 cs7.3
 
 # Real World JSON
 
@@ -98,6 +98,8 @@ It returns the name of the root node JSON composite. This name will look like th
 
 * `ja-0` – a json array numbered `0`.
 * `jo-0` – a json object numbered `0`.
+
+Note that the above names are true only for PERMANENT JSON objects. Transient ones will be named like `ja-t0` and `jo-t0`.
 
 As new JSON composites are created during a volley, the numbers increase to keep them all distinct.
 JSON composites are all created as transient facts and will die at the end of the volley unless you do
@@ -205,8 +207,8 @@ When you access an array element, you have to quote the text because it consists
 CS which breaks off `[` and `]`. If you are just accesing an object field of something, you can quote the
 string or just type it direct
 ```
-^jsonpath(.id object2)
-^jsonpath(".id" object2)
+^jsonpath(.id $object2)
+^jsonpath(".id" $object2)
 ```
 
 Of course you don't always have to start at the root. If you know what you want is going to become

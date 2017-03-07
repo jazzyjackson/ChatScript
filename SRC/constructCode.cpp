@@ -50,7 +50,6 @@ resume:
 		else if (!stricmp(buffer,(char*)"0") || !stricmp(buffer,(char*)"false")) result = FAILRULE_BIT;	// treat 0 and false as failure along with actual failures
 	}
 	*buffer = 0;
-
 	if (call){;} // call happened
 	else if (IsComparison(*op)) //   a comparison test
 	{
@@ -66,7 +65,7 @@ resume:
 	{
 		if (*word1 == SYSVAR_PREFIX || *word1 == '_' || *word1 == USERVAR_PREFIX || *word1 == '@' || *word1 == '?' || *word1 == '^')
 		{
-			char remap[MAX_WORD_SIZE];
+			char* remap = AllocateStack(NULL, MAX_BUFFER_SIZE);
 			strcpy(remap,word1); // for tracing
 			if (*word1 == '^' && IsDigit(word1[1])) strcpy(word1,callArgumentList[atoi(word1+1)+fnVarBase]);  // simple function var, remap it
 			char* found;
@@ -86,10 +85,9 @@ resume:
 			else if (*word1 == '^' && word1[1] == '\'' && word1[2] == '_') found = ""; // indirect var
 			else if (*word1 == '@') found =  FACTSET_COUNT(GetSetID(word1)) ? (char*) "1" : (char*) "";
 			else found = word1;
-
 			if (trace & TRACE_OUTPUT && CheckTopicTrace()) 
 			{
-				char label[MAX_WORD_SIZE];
+				char* label = AllocateStack(NULL, MAX_BUFFER_SIZE);
 				strcpy(label,word1);
 				if (*remap == '^') sprintf(label,"%s->%s",remap,word1);
 				if (!*found) 
@@ -102,7 +100,9 @@ resume:
 					if (invert) id = Log(STDTRACELOG,(char*)"!%s (%s) ",label,found);
 					else id = Log(STDTRACELOG,(char*)"%s (%s) ",label,found);
 				}
+				ReleaseStack(label);
 			}
+			ReleaseStack(remap);
 			if (!*found) result = FAILRULE_BIT;
 			else result = NOPROBLEM_BIT;
 		}
@@ -432,6 +432,10 @@ FunctionResult HandleRelation(char* word1,char* op, char* word2,bool output,int&
 			}			
 			if (*op == '!') result = (stricmp(arg1,arg2)) ? NOPROBLEM_BIT : FAILRULE_BIT;
 			else if (*op == '=') result = (!stricmp(arg1,arg2)) ? NOPROBLEM_BIT: FAILRULE_BIT;
+			else if (*op == '>' && op[1] == '=') result = (stricmp(arg1, arg2) >= 0) ? NOPROBLEM_BIT : FAILRULE_BIT;
+			else if (*op == '<' && op[1] == '=') result = (stricmp(arg1, arg2) <= 0) ? NOPROBLEM_BIT : FAILRULE_BIT;
+			else if (*op == '>') result = (stricmp(arg1, arg2) > 0) ? NOPROBLEM_BIT : FAILRULE_BIT;
+			else if (*op == '<') result = (stricmp(arg1, arg2) < 0) ? NOPROBLEM_BIT : FAILRULE_BIT;
 			else result = FAILRULE_BIT;
 		}
 		//   handle float ops

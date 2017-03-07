@@ -629,7 +629,7 @@ typedef unsigned int DICTINDEX;	//   indexed ref to a dictionary entry
 #define FOREIGN_TOKENS			0x0000000800000000ULL
 #define FAULTY_PARSE			0x0000001000000000ULL   
 #define QUOTATION				0x0000002000000000ULL
-#define NOT_SENTENCE				0x0000004000000000ULL   
+#define NOT_SENTENCE			0x0000004000000000ULL   
 
 // in tokencontrol, not tokenflags
 #define NO_PROPER_SPELLCHECK		0x0000008000000000ULL   
@@ -639,6 +639,7 @@ typedef unsigned int DICTINDEX;	//   indexed ref to a dictionary entry
 
 // in tokenflags not token control
 #define NO_FIX_UTF					0x0000080000000000ULL   
+#define NO_CONDITIONAL_IDIOM         0x0000100000000000ULL
 #define JSON_DIRECT_FROM_OOB		0x0000400000000000ULL   
 
 // end of tokenflags

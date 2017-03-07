@@ -50,7 +50,7 @@ code > span.in { color: #60a0b0; font-weight: bold; font-style: italic; } /* Inf
 <p>© Bruce Wilcox, gowilcox@gmail.com brilligunderstanding.com</p>
 </blockquote>
 <blockquote>
-<p>Revision 2/9/2017 cs7.2</p>
+<p>Revision 3/4/2017 cs7.3</p>
 </blockquote>
 <h1 id="real-world-json">Real World JSON</h1>
 <p>JSON (JavaScript Object Notation) is an open standard format using human-readable text to transmit data objects over the web. It is a common standard largely replacing XML which is too wordy and hard to read. JSON has two datatypes that represents collections of values, the array and the object. A JSON array is a list of JSON entities separated by commas and placed within <code>[]</code>, e.g.,</p>
@@ -103,6 +103,7 @@ code > span.in { color: #60a0b0; font-weight: bold; font-style: italic; } /* Inf
 <li><code>ja-0</code> – a json array numbered <code>0</code>.</li>
 <li><code>jo-0</code> – a json object numbered <code>0</code>.</li>
 </ul>
+<p>Note that the above names are true only for PERMANENT JSON objects. Transient ones will be named like <code>ja-t0</code> and <code>jo-t0</code>.</p>
 <p>As new JSON composites are created during a volley, the numbers increase to keep them all distinct. JSON composites are all created as transient facts and will die at the end of the volley unless you do something to explictly keep them (typically <code>^jsongather</code> into some factset and then saving that OR using that to remove all their transient flags OR using <code>^delete()</code> to destroy the facts in the set).</p>
 <p>If you are keeping JSON across volleys, you should use the optional Json flags argument to make sure numbering never collides (normally the numbers start back at 0 for each new volley).</p>
 <p>JSON has stricter requirements on its format than CS does.</p>
@@ -139,8 +140,8 @@ code > span.in { color: #60a0b0; font-weight: bold; font-style: italic; } /* Inf
 <p>Array values are accessed using typical array notation like <code>[3]</code> and object fields using dotted notation. A simple path access might look like this: <code>[1].id</code> which means take the root object passed as id, e.g., <code>ja-1</code>, get the 2nd index value (arrays are 0-based in JSON).</p>
 <p>That value is expected to be an object, so return the value corresponding to the id field of that object. In more complex situations, the value of id might itself be an object or an array, which you could continue indexing like <code>[1].id.firstname</code>.</p>
 <p>You can walk an array by using <code>[$_index]</code> and varying the value of <code>$_index</code>. When you access an array element, you have to quote the text because it consists of multiple tokens to CS which breaks off <code>[</code> and <code>]</code>. If you are just accesing an object field of something, you can quote the string or just type it direct</p>
-<pre><code>^jsonpath(.id object2)
-^jsonpath(&quot;.id&quot; object2)</code></pre>
+<pre><code>^jsonpath(.id $object2)
+^jsonpath(&quot;.id&quot; $object2)</code></pre>
 <p>Of course you don't always have to start at the root. If you know what you want is going to become object 7 eventually, you could directly say .id given <code>jo-7</code> and the system would locate that and get the id field. Likewise if you know that key names are somehow unique, you could query for them directly using</p>
 <pre><code>^query(direct_v ? verbkey ?)</code></pre>
 <p>Or even if the key is not unique you can restrict matches to facts having the <code>JSON_OBJECT_FACT</code> flag.</p>

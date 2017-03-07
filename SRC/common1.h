@@ -30,7 +30,7 @@ typedef unsigned int MEANING;					//   a flagged indexed dict ptr
 #define INDEX_BITS          0x0fC00000  //   6 bits of ontology meaning indexing ability  63 possible meanings allowed
 #define INDEX_MINUS			0x00400000  // what to decrement to decrement the meaning index
 #define INDEX_OFFSET        22          //   shift for ontoindex  (rang 0..63)  
-#define TYPE_RESTRICTION	0xf0000000  // corresponds to basic pos
+#define TYPE_RESTRICTION	 0xf0000000  // corresponds to basic pos
 #define TYPE_RESTRICTION_SHIFT 0
 
 // A meaning = TYPE_RESTRICTION(4 bit) + INDEX_BITS (6 bits) + MEANING_BASE(21 bits) + SYNSET_MARKER(1 bit)

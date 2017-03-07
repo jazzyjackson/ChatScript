@@ -162,6 +162,7 @@ void SetTriedMeaning(WORDP D,uint64 bits);
 void ReadSubstitutes(const char* name,unsigned int build,const char* layer,unsigned int fileFlag,bool filegiven = false);
 void Add2ConceptTopicList(int list[256], WORDP D,int start,int end,bool unique);
 void SuffixMeaning(MEANING T,char* at, bool withPos);
+int UTFCharSize(char* utf);
 
 // memory data
 extern WORDP dictionaryBase;
@@ -179,6 +180,9 @@ extern uint64 adverbFormat;
 extern MEANING posMeanings[64];
 extern MEANING sysMeanings[64];
 extern bool buildDictionary;
+extern unsigned int propertyRedefines;	// property changes on locked dictionary entries
+extern unsigned int flagsRedefines;		// systemflags changes on locked dictionary entries
+
 extern FACT* factLocked;
 extern char* stringLocked;
 

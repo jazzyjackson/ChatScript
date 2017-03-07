@@ -65,8 +65,8 @@ void PrepareVariableChange(WORDP D,char* word,bool init);
 // user variable accessors
 void ClearUserVariableSetFlags();
 void ClearUserVariables(char* above = 0);
-void MigrateUserVariables(char* above = 0);
-void RecoverUserVariables(char* above = 0);
+void MigrateUserVariables();
+void RecoverUserVariables();
 char* GetUserVariable(const char* word, bool nojson = false,bool notracing = false);
 void SetUserVariable(const char* var, char* word, bool assignment = false);
 void Add2UserVariable(char* var, char* word,char* op,char* originalArg);

@@ -2,7 +2,7 @@
 
 > © Bruce Wilcox, gowilcox@gmail.com brilligunderstanding.com
 
-> Revision 2/9/2017 cs7.2
+> Revision 3/4/2017 cs7.3
 
 * [Topic Functions](ChatScript-System-Functions-Manual.md#topic-functions)
 * [Marking Functions](ChatScript-System-Functions-Manual.md#marking-functions)
@@ -434,8 +434,10 @@ with "chatoutput" as the verb.
 Note that the stream is considered a single sentence. If you want to supply multiple sentences, you need to
 call `^tokenize` and then loop on the facts created.
 
-### `^tokenize`( stream )
-Splits the stream into sentences and creates facts of each like this: `(sentence ^tokenize ^tokenize)`.
+### `^tokenize`( {WORD SENTENCE} stream )
+WORD or SENTENCE are optional parameters (SENTENCE is default). If SENTENCE, then 
+splits the stream into sentences and creates facts of each like this: `(sentence ^tokenize ^tokenize)`. If WORD, 
+then splits it entirely into words paying no attention to sentence boundaries.
 
 ### `^capitalized`( n )
 Returns `1` if the nth word of the sentences starts with a capital letter in
@@ -497,6 +499,8 @@ u: (_~animals) refine()
 `_0` is set to an animal. Normally the rejoinder would set a color onto `_0` and clobber it, but
 the call to `^setwildcardindex` forces it to use `_1` instead, so both `_0` and `_1` have values.
 
+### `^isnormalword(value)
+Fails if value has a character that is not alphabetic, numberic, a hyphen, an underscore, or an apostrophe.
 
 # Number Functions
 
@@ -547,7 +551,8 @@ This converts time data since 1970 (Unix epoch time). Analogous to `%fulltime`, 
 current time in seconds. Month can be number 1-12 or name of month or abbreviation of
 month.
 
-
+### `^isnumber(value)
+Fails if value is not an integer, float, or currency, 
 
 # Output Functions
 
@@ -1115,6 +1120,40 @@ close the file use
 By default, ^log acts like output to user, converting escaped nr, and t into their actual ascii characters.
 The flag RESPONSE_NOCONVERTSPECIAL passed in will block this.
 
+
+### `^memorymark`()
+Reading a document consists of performing a single volley of the
+entire document. This can tie up a lot of memory in keeping facts, dictionary entries, user
+variables, etc. If you are careful in what you do, you can make the memory burden go
+away. `^memoryMark()` notes where memory is currently at, and is best done within the
+document_pre topic. Then you can release memory after every sentence of the document,
+so it doesn't accumulate.
+
+### `^memoryfree`()
+This releases memory back to the last ^memorymark(). It is best
+done after your main control of the document bot has finished processing a sentence.
+E.g.,
+```
+topic: ~document_pre system repeat()
+t: ^memorymark() # note start
+  Log(OUTPUT_ECHO \n Begin $$document ) # instant display
+
+topic: ~main_control system repeat () # executed each sentence of document
+u: (%document)
+  respond(~filter)
+  ^memoryfree()
+```
+The caveats and warnings about how this works. Whenenver you free memory, the
+system will clear all fact sets. It will clear all user variables set after the memory mark
+(leaving the ones before alone). It will then release facts, text, and dictionary nodes
+created after the mark.
+
+### `^memorygc`()
+This can function in either document mode or chat mode. It does what it can to release unused memory. It has restrictions in it does
+not work if you have facts with facts as fields or are in planning mode. It also discards saved sentence data, recovery data when you modify flags or properties
+of dictionary entries that are preloaded, and all of your analysis data for the current sentence.
+
+
 # JSON Functions 
 
 JSON functions and JSON are described more fully in the ChatScript JSON manual.
@@ -1527,8 +1566,14 @@ which allows you to disable a word/phrase substitution. Use as word the full tex
 system is reloaded.
 
 ### `^removeproperty`( word value )
-Remove this property bit from this word. This effect lasts until the system is reloaded. It is really only useful during the building of the dictionary itself. Value should be all upper case.
-`^walkdictionary('function)` calls the named output macro from every word in the
+Remove this property bit from this word. This effect lasts until the system is reloaded. Value should be all upper case.
+Value is normally a system flag value or a property value from `dictionarysystem.h` which does not need a hash in front of it (system will look up the name).
+Word can be in doublequotes. And there are two internal bits that are also allowed to be removed:  `CONCEPT` and `HAS_SUBSITUTE`.  You can use
+`HAS_SUBSTITUTE` to disable some standard substitution in LIVEDATA, but you can't apply this at build time because the system won't remember.
+Instead call it from `^csboot` during startup.
+
+
+### `^walkdictionary('function)` calls the named output macro from every word in the
 dictionary. The function should have 1 argument, the word.
 
 ### `^Iterator`( ? member ~concept )

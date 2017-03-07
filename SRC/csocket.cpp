@@ -905,8 +905,8 @@ static void* HandleTCPClient(void *sock1)  // individual client, data on STACK..
 			{
 				if (len1 < 0) 
 				{
-					ReportBug((char*)"TCP recv from %s returned error: %d\n", sock->getForeignAddress().c_str(), errno);
-					Log(SERVERLOG,(char*)"TCP recv from %s returned error: %d\n", sock->getForeignAddress().c_str(), errno);
+					ReportBug((char*)"TCP recv from %s returned error: %d\r\n", sock->getForeignAddress().c_str(), errno);
+					Log(SERVERLOG,(char*)"TCP recv from %s returned error: %d\r\n", sock->getForeignAddress().c_str(), errno);
 				}
 				else if ( len >= (SERVERTRANSERSIZE - 100))
 				{
@@ -916,7 +916,7 @@ static void* HandleTCPClient(void *sock1)  // individual client, data on STACK..
 				else 
 				{
 					ReportBug((char*)"TCP %s closed connection prematurely\r\n", sock->getForeignAddress().c_str());
-					Log(SERVERLOG,(char*)"TCP %s closed connection prematurely\n", sock->getForeignAddress().c_str());
+					Log(SERVERLOG,(char*)"TCP %s closed connection prematurely\r\n", sock->getForeignAddress().c_str());
 				}
 				delete sock;
 				free(memory);

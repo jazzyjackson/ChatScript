@@ -11,6 +11,7 @@
 ##<<ENGLISH concept: ~city UPPERCASE_MATCH( ) ##>>
 ##<<ENGLISH concept: ~continent( ) ##>>
 ##<<ENGLISH concept: ~country UPPERCASE_MATCH( ) ##>>
+##<<ENGLISH concept: ~nationalities() ##>>
 ##<<ENGLISH concept: ~galaxy() ##>>
 ##<<ENGLISH concept: ~tv_show ( ) ##>>
 ##<<ENGLISH concept: ~island( ) ##>>
@@ -2066,5 +2067,5 @@
 ##<<ENGLISH concept: ~xweightnouns (centigram gram kilo kilogram ounce pound stone ton weight ) ##>>
 ##<<ENGLISH concept: ~yellow (~yellow_other beige buff citreous citrine gamboge lurid nankeen ochre tawny yellow yellowish ) ##>>
 ##<<ENGLISH concept: ~yellow_other (apricot butter buttercup butterscotch canary chrome gold goldenrod lemon mustard peach persimmon primrose saffron suede sulphur tangerine ) ##>>
-##<<ENGLISH concept: ~yesanswer (~yes  Y "its ok" "it is ok") ##>>
+##<<ENGLISH concept: ~yesanswer (~yes  Y "its ok" "it is ok" yo ya ys) ##>>
 ##<<ENGLISH concept: ~noanswer (~no  N  ) ##>>

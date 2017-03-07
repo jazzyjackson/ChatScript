@@ -578,6 +578,77 @@ bool SpellCheckSentence()
 	return fixedSpell;
 }
 
+static char UnaccentedChar(char* str)
+{
+	unsigned char c = (unsigned char)*str;
+	if (!(c & 0x80)) return c;
+	unsigned char c1 = (unsigned char)str[1];
+
+	// can we change an accented lowercase letter to unaccented? 
+	if (c == 0xc3)
+	{// b0?  be
+		if ((c1 >= 0xa0 && c1 <= 0xa5)) return 'a';
+		else if ((c1 == 0xa7)) return 'c';
+		else if ((c1 >= 0xa8 && c1 <= 0xab)) return 'e';
+		else if ((c1 >= 0xac && c1 <= 0xaf)) return 'i';
+		else if ((c1 == 0xb1)) return 'n';
+		else if ((c1 >= 0xb2 && c1 <= 0xb6)) return 'o';
+		else if ((c1 == 0xb8 )) return 'o';
+		else if ((c1 >= 0xb9 && c1 <= 0xbc)) return 'u';
+		else if ((c1 == 0xbd || (unsigned char)str[2] == 0xbf)) return 'y';
+		// not doing ae else if (*currentCharReal == 'a' && *nextCharReal == 'e' && *nextCharDict == 0xa6)
+//		else if ((c1 >= 0xb9 && c1 <= 0xbc)) return 'd';
+//		else if ((c1 >= 0xb9 && c1 <= 0xbc)) return 'g';
+//		else if ((c1 >= 0xb9 && c1 <= 0xbc)) return 'r';
+//		else if ((c1 >= 0xb9 && c1 <= 0xbc)) return 's';
+//		else if ((c1 >= 0xb9 && c1 <= 0xbc)) return 't';
+//		else if ((c1 >= 0xb9 && c1 <= 0xbc)) return 'w';
+//		else if ((c1 >= 0xb9 && c1 <= 0xbc)) return 'z';
+	}
+	else if (c == 0xc4)
+	{
+		if ((c1 == 0x81 || c1 == 0x83 || c1 == 0x85)) return 'a';
+		else if ((c1 == 0x87 || c1 == 0x89 || c1 == 0x8b || c1 == 0x8d)) return 'c';
+		else if ((c1 == 0x8f) || c1 == 0x91) return 'd';
+		else if ((c1 == 0x93 || c1 == 0x95 || c1 == 0x97 || c1 == 0x99 || c1 == 0x9b)) return 'e';
+		else if ((c1 == 0x9d || c1 == 0x9f|| c1 == 0xa1 || c1 == 0xa3)) return 'g';
+		else if ((c1 == 0xa5 || c1 == 0xa7)) return 'h';
+		else if ((c1 == 0xa9 || c1 == 0xab || c1 == 0xad || c1 == 0xaf || c1 == 0xb1)) return 'i';
+		else if ((c1 == 0xb5)) return 'j';
+		else if ((c1 == 0xb7)) return 'k';
+		else if ((c1 == 0xba || c1 == 0xbc || c1 == 0xbe)) return 'l';
+	}
+	else if (c == 0xc5)
+	{
+		if ((c1 == 0x80 || c1 == 0x82 || c1 == 0x86 || c1 == 0x88)) return 'l';
+		else if ((c1 == 0x80 || c1 == 0x82)) return 'n';
+		else if ((c1 == 0x8d || c1 == 0x8f || c1 == 0x91)) return 'o';
+		else if ((c1 == 0x97 || c1 == 0x99)) return 'r';
+		else if ((c1 == 0x9b || c1 == 0x9d || c1 == 0x9f || c1 == 0xa1)) return 's';
+		else if ((c1 == 0xa3 || c1 == 0xa5 || c1 == 0xa7)) return 't';
+		else if ((c1 == 0xa9 || c1 == 0xab || c1 == 0xad || c1 == 0xaf || c1 == 0xb1 || c1 == 0xb3)) return 'u';
+		else if ((c1 == 0xb5 )) return 'w';
+		else if ((c1 == 0xb7)) return 'y';
+		else if ((c1 == 0xba || c1 == 0xbc || c1 == 0xbe)) return 'z';
+	}
+	else if (c == 0xc7)
+	{
+		if ((c1 == 0x8e || c1 == 0xa1)) return 'a';
+		else if ((c1 == 0x90)) return 'i';
+		else if ((c1 == 0x92)) return 'o';
+		else if ((c1 == 0x94 || c1 == 0x96 || c1 == 0x98 || c1 == 0x9a || c1 == 0x9c)) return 'u';
+		else if ((c1 == 0xa5 || c1 == 0xa7|| c1 == 0x98 )) return 'g';
+		else if ((c1 == 0xa9)) return 'k';
+		else if ((c1 == 0xab || c1 == 0xad)) return 'o';
+		else if ((c1 == 0xb0)) return 'j';
+		else if ((c1 == 0xb5)) return 'g';
+		else if ((c1 == 0xb9)) return 'n';
+		else if ((c1 == 0xbb)) return 'a';
+		else if ((c1 == 0xbf)) return 'o';
+	}
+	return 0;
+}
+
 static int EditDistance(WORDINFO& dictWordData, WORDINFO& realWordData,int min)
 {//   dictword has no underscores, inputSet is already lower case
     char dictw[MAX_WORD_SIZE];
@@ -587,7 +658,6 @@ static int EditDistance(WORDINFO& dictWordData, WORDINFO& realWordData,int min)
     char* dictstart = dictinfo;
 	char* realstart = realWordData.word;
     int val = 0; //   a difference in length will manifest as a difference in letter count
-	
 	//  look at specific letter errors
     char priorCharDict[10];
     char priorCharReal[10];
@@ -605,6 +675,8 @@ static int EditDistance(WORDINFO& dictWordData, WORDINFO& realWordData,int min)
     char* resumeDict;
     char* resumeReal1;
     char* resumeDict1;
+	char baseCharReal;
+	char baseCharDict;
     while (ALWAYS)
     {
         if (val > min) return 1000; // no good
@@ -627,13 +699,21 @@ static int EditDistance(WORDINFO& dictWordData, WORDINFO& realWordData,int min)
         resumeDict1 = IsUTF8((char*)resumeDict, nextCharDict);
         resumeReal2 = IsUTF8((char*)resumeReal1, next1CharReal); // 2 char ahead
         resumeDict2 = IsUTF8((char*)resumeDict1, next1CharDict);
-
-        if (!stricmp(currentCharReal,currentCharDict)) // match chars
-        {
-            dictinfo = resumeDict;
-            realinfo = resumeReal;
-            continue;
-        }
+		baseCharReal = UnaccentedChar(currentCharReal);
+		baseCharDict = UnaccentedChar(currentCharDict);
+		if (!stricmp(currentCharReal, currentCharDict)) // match chars
+		{
+			dictinfo = resumeDict;
+			realinfo = resumeReal;
+			continue;
+		}
+		if (baseCharReal && baseCharReal == baseCharDict)
+		{
+			dictinfo = resumeDict;
+			realinfo = resumeReal;
+			val += 1; // minimal charge but separate forms of delivre
+			continue;
+		}
         // treat german double s and ss equivalent
         if (!stricmp(language, "german"))
         {
@@ -757,22 +837,6 @@ static int EditDistance(WORDINFO& dictWordData, WORDINFO& realWordData,int min)
             realinfo = resumeReal2;
             continue;
         }
-        // can we change an unaccented letter  to another similar letter with accent
-        if (*currentCharDict == 0xc3)
-        {
-            bool accent = false;
-            if (*currentCharReal == 'a' && (*nextCharDict >= 0xa0 && *nextCharDict <= 0xa5)) accent = true;
-            else if (*currentCharReal == 'e' && (*nextCharDict >= 0xa8 && *nextCharDict <= 0xab)) accent = true;
-            else if (*currentCharReal == 'i' && (*nextCharDict >= 0xac && *nextCharDict <= 0xaf)) accent = true;
-            else if (*currentCharReal == 'o' && (*nextCharDict >= 0xb2 && *nextCharDict <= 0xb6)) accent = true;
-            else if (*currentCharReal == 'u' && (*nextCharDict >= 0xb9 && *nextCharDict <= 0xbc)) accent = true;
-            if (accent)
-            {
-                dictinfo = resumeDict;
-                realinfo = resumeReal;
-                continue;
-            }
-        }
 
         // probable mistyped letter since next matches up
         if (!strcmp(nextCharReal, nextCharDict))
@@ -814,120 +878,9 @@ static int EditDistance(WORDINFO& dictWordData, WORDINFO& realWordData,int min)
         dictinfo = resumeDict; // skip over letter we match momentarily
         realinfo = resumeReal; // move on past our junk letter and match letter
         val += 16;
-        continue;
-#ifdef JUNK
-
-		  //   first and last letter errors are rare, more likely to get them right
-		if (dictinfo == dictstart && *dictstart != *inputstart && !stricmp(language,"english")) val += 6; // costs a lot  to change first letter, odds are he types that right 
-		if (dictinfo[1] == 0 &&  inputSet[1] == 0 &&  *dictinfo != *inputSet) val += 6; // costs more to change last letter, odds are he types that right or sees its wrong
-  
-            else if (inputSet+1 == inputend && *inputSet == 's') val += 30;    // losing a trailing s is almost not acceptable
-            else val += 9; //  high cost removing an extra letter, but not as much as having to change it
-            ++inputSet;
-		}
-        else if (dictinfo[1] == *inputSet) // next dict leter matches current input letter, so maybe his input deleted a char here and needs to insert  it
-        {
-            char* prior = (dictinfo == dictstart) ? (char*)" " : ((char*)(dictinfo-1));
-            if (*dictinfo == *prior  && !IsVowel(*dictinfo )) val += 5; 
-            else if (IsVowel(*dictinfo ))  val += 1; //  low cost for missing a vowel ( already charged for short input), might be a texting abbreviation
-            else val += 9; // high cost for deleting a character, but not as much as changing it
-            ++dictinfo;
-       }
-       else //   this has no valid neighbors.  alter it to be the correct, but charge for multiple occurences
-       {
-			if (count == 1 && *dictinfo != *inputSet && !stricmp(language,"english")) val += 30; //costs a lot to change the first letter, odds are he types that right or sees its wrong
-			//  2 in a row are bad, check for a substituted vowel sound
-			bool swap = false;
-			int oldval = val;
-			if (dictinfo[1] != inputSet[1]) // do multicharacter transformations
-			{
-				if (*inputSet == 't' && !strncmp((char*)dictinfo,(char*)"ght",3)) 
-				{
-                    dictinfo += 3;
-                    inputSet += 1;
-                    val += 5;  
-				}
-				else if (!strncmp((char*)inputSet,(char*)"ci",2) && !strncmp((char*)dictinfo,(char*)"cki",3)) 
-				{
-                    dictinfo += 3;
-                    inputSet += 2;
-                    val += 5;
-				}
-				else if (*(dictinfo-1) == 'a' && !strcmp((char*)dictinfo,(char*)"ir") && !strcmp((char*)inputSet,(char*)"re")) // prepair prepare as terminal sound
-				{
-                    dictinfo += 2;
-                    inputSet += 2;
-                    val += 3;
-				}
-				else if (!strncmp((char*)inputSet,(char*)"ous",3) && !strncmp((char*)dictinfo,(char*)"eous",4)) 
-				{
-                    dictinfo += 4;
-                    inputSet += 3;
-                    val += 5; 
-               }
-              else if (!strncmp((char*)inputSet,(char*)"of",2) && !strncmp((char*)dictinfo,(char*)"oph",3)) 
-               {
-                    dictinfo += 3;
-                    inputSet += 2;
-                    val += 5; 
-               }
-			else if (*dictinfo == 'x' && !strncmp((char*)inputSet,(char*)"cks",3)) 
-               {
-                    dictinfo += 1;
-                    inputSet += 3;
-                    val += 5; 
-               }
-               else if (*inputSet == 'k' && !strncmp((char*)dictinfo,(char*)"qu",2)) 
-               {
-                    dictinfo += 2;
-                    inputSet += 1;
-                    val += 5;  
-               }
-			   if (oldval != val){;} // swallowed a multiple letter sound change
-               else if (!strncmp((char*)dictinfo,(char*)"able",4) && !strncmp((char*)inputSet,(char*)"ible",4)) swap = true;
-               else if (!strncmp((char*)dictinfo,(char*)"ible",4) && !strncmp((char*)inputSet,(char*)"able",4)) swap = true;
-               else if (*dictinfo == 'a' && dictinfo[1] == 'y'     && *inputSet == 'e' && inputSet[1] == 'i') swap = true;
-               else if (*dictinfo == 'e' && dictinfo[1] == 'a'     && *inputSet == 'e' && inputSet[1] == 'e') swap = true;
-               else if (*dictinfo == 'e' && dictinfo[1] == 'e'     && *inputSet == 'e' && inputSet[1] == 'a') swap = true;
-               else if (*dictinfo == 'e' && dictinfo[1] == 'e'     && *inputSet == 'i' && inputSet[1] == 'e') swap = true;
-               else if (*dictinfo == 'e' && dictinfo[1] == 'i'     && *inputSet == 'a' && inputSet[1] == 'y') swap = true;
-               else if (*dictinfo == 'e' && dictinfo[1] == 'u'     && *inputSet == 'o' && inputSet[1] == 'o') swap = true;
-               else if (*dictinfo == 'e' && dictinfo[1] == 'u'     && *inputSet == 'o' && inputSet[1] == 'u') swap = true;
-               else if (*dictinfo == 'i' && dictinfo[1] == 'e'     && *inputSet == 'e' && inputSet[1] == 'e') swap = true;
-               else if (*dictinfo == 'o' && dictinfo[1] == 'o'     && *inputSet == 'e' && inputSet[1] == 'u') swap = true;
-               else if (*dictinfo == 'o' && dictinfo[1] == 'o'     && *inputSet == 'o' && inputSet[1] == 'u') swap = true;
-               else if (*dictinfo == 'o' && dictinfo[1] == 'o'     && *inputSet == 'u' && inputSet[1] == 'i') swap = true;
-               else if (*dictinfo == 'o' && dictinfo[1] == 'u'     && *inputSet == 'e' && inputSet[1] == 'u') swap = true;
-               else if (*dictinfo == 'o' && dictinfo[1] == 'u'     && *inputSet == 'o' && inputSet[1] == 'o') swap = true;
-               else if (*dictinfo == 'u' && dictinfo[1] == 'i'     && *inputSet == 'o' && inputSet[1] == 'o') swap = true;
-               if (swap)
-               {
-                    dictinfo += 2;
-                    inputSet += 2;
-                    val += 5; 
-               }
-            } 
-
-            // can we change a letter to another similar letter
-            if (oldval == val) 
-            {
-				bool convert = false;
-                if (*dictinfo == 'i' && *inputSet== 'y' && count > 1) convert = true;//   but not as first letter
-                else if ((*dictinfo == 's' && *inputSet == 'z') || (*dictinfo == 'z' && *inputSet == 's')) convert = true;
-                else if (*dictinfo == 'y' && *inputSet == 'i' && count > 1) convert = true; //   but not as first letter
-                else if (*dictinfo == '/' && *inputSet == '-') convert = true;
-                else if (inputSet+1 == inputend && *inputSet == 's') val += 30;    //   changing a trailing s is almost not acceptable
-                if (convert) val += 5;	// low cost for exchange of similar letter, but dont do it often
-                else val += 12;			// changing a letter is expensive, since it destroys the visual image
-                ++dictinfo;
-                ++inputSet;
-            }
-       } 
-#endif
     }
     return val;
 }
-
 
 static char* StemSpell(char* word,unsigned int i,uint64& base)
 {
@@ -1021,12 +974,14 @@ char* SpellFix(char* originalWord,int start,uint64 posflags)
     multichoice = false;
     char word[MAX_WORD_SIZE];
     MakeLowerCopy(word, originalWord);
-    WORDINFO realWordData;
+	char word1[MAX_WORD_SIZE];
+	MakeUpperCopy(word1, originalWord);
+	WORDINFO realWordData;
     ComputeWordData(word, &realWordData);
 	if (realWordData.bytelen >= 100 || realWordData.bytelen == 0) return NULL;
 	if (IsDigit(*originalWord)) return NULL; // number-based words and numbers must be treated elsewhere
-    char letterLow = GetLowercaseData(*originalWord);
-	char letterHigh = GetUppercaseData(*originalWord);
+    char letterLow = *word;
+	char letterHigh = *word1;
 	bool hasUnderscore = (strchr(originalWord,'_')) ? true : false;
 	bool isUpper = IsUpperCase(originalWord[0]);
 	if (IsUpperCase(originalWord[1])) isUpper = false;	// not if all caps
@@ -1070,17 +1025,12 @@ char* SpellFix(char* originalWord,int start,uint64 posflags)
 			offset = D->spellNode;
 			if (PART_OF_SPEECH == posflags  && D->systemFlags & PATTERN_WORD){;} // legal generic match
 			else if (!(D->properties & posflags)) continue; // wrong kind of word
-			if (*D->word != letterLow && *D->word != letterHigh && !stricmp(language,"english")) continue;	// we assume no one misspells starting letter
 			char* under = strchr(D->word,'_');
 			// SPELLING lists have no underscore or space words in them
 			if (hasUnderscore && !under) continue;	 // require keep any underscore
 			if (!hasUnderscore && under) continue;	 // require not have any underscore
 			if (isUpper && !(D->internalBits & UPPERCASE_HASH) && start != 1) continue;	// dont spell check to lower a word in upper
             WORDINFO dictWordData;
-            if (!stricmp(D->word, "success"))
-            {
-                int xx = 0;
-            }
             ComputeWordData(D->word, &dictWordData);
             int val = EditDistance(dictWordData, realWordData, min);
 			if (val <= min) // as good or better

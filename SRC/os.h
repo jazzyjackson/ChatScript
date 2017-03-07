@@ -2,7 +2,7 @@
 #define _OSH_
 
 #ifdef INFORMATION
-Copyright (C) 2011-2016by Bruce Wilcox
+Copyright (C) 2011-2017 by Bruce Wilcox
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal
 in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
@@ -57,6 +57,7 @@ extern char* stackFree;
 extern char* stackStart;
 extern char* heapEnd;
 extern unsigned long minHeapAvailable;
+extern int loglimit;
 
 char* Index2Heap(unsigned int offset);
 inline unsigned int Heap2Index(char* str) {return (!str) ? 0 : (unsigned int)(heapBase - str);}
@@ -79,7 +80,10 @@ char* AllocateHeap(char* word,size_t len = 0,int bytes= 1,bool clear = false,boo
 bool PreallocateHeap(size_t len);
 void ProtectNL(char* buffer);
 void InitStackHeap();
+void FreeStackHeap();
 bool KeyReady();
+bool InHeap(char* ptr);
+bool InStack(char* ptr);
 
 // FILE SYSTEM
 int MakeDirectory(char* directory);
@@ -92,6 +96,7 @@ extern char currentFilename[MAX_WORD_SIZE];
 int FClose(FILE* file);
 void InitFileSystem(char* untouchedPath,char* readablePath,char* writeablePath);
 void C_Directories(char* x);
+void ResetEncryptTags();
 void StartFile(const char* name);
 int FileSize(FILE* in,char* buffer,size_t allowedSize);
 void FileDelete(const char* filename);
@@ -122,8 +127,8 @@ typedef size_t (*UserFileRead)(void* buffer,size_t size, size_t count, FILE* fil
 typedef size_t (*UserFileWrite)(const void* buffer,size_t size, size_t count, FILE* file);
 typedef int (*UserFileSize)(FILE* file, char* buffer, size_t allowedSize);
 typedef void (*UserFileDelete)(const char* name);
-typedef size_t (*UserFileDecrypt)(void* buffer,size_t size, size_t count, FILE* file);
-typedef size_t (*UserFileEncrypt)(const void* buffer,size_t size, size_t count, FILE* file);
+typedef size_t (*UserFileDecrypt)(void* buffer,size_t size, size_t count, FILE* file,char* filekind);
+typedef size_t (*UserFileEncrypt)(const void* buffer,size_t size, size_t count, FILE* file,char* filekind);
 
 typedef struct USERFILESYSTEM //  how to access user topic data
 {
@@ -141,8 +146,8 @@ typedef struct USERFILESYSTEM //  how to access user topic data
 extern USERFILESYSTEM userFileSystem;
 void InitUserFiles();
 void WalkDirectory(char* directory,FILEWALK function, uint64 flags);
-size_t DecryptableFileRead(void* buffer,size_t size, size_t count, FILE* file,bool decrypt);
-size_t EncryptableFileWrite(void* buffer,size_t size, size_t count, FILE* file,bool encrypt);
+size_t DecryptableFileRead(void* buffer,size_t size, size_t count, FILE* file,bool decrypt,char* filekind);
+size_t EncryptableFileWrite(void* buffer,size_t size, size_t count, FILE* file,bool encrypt,char* filekind);
 char* GetUserPath(char* name);
 
 // TIME

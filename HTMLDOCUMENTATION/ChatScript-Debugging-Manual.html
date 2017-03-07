@@ -13,7 +13,7 @@
 <p>© Bruce Wilcox, gowilcox@gmail.com brilligunderstanding.com</p>
 </blockquote>
 <blockquote>
-<p>Revision 2/9/2017 cs7.2</p>
+<p>Revision 3/4/2017 cs7.3</p>
 </blockquote>
 <p>You've written script. It doesn't work. Now what? Now you need to debug it, fix it, and recompile it. Debugging is mostly a matter of tracing what the system does testpaand finding out where it doesn't do what you expected. Debugging mostly done by issuing commands to the engine, as opposed to chatting.</p>
 <p>If the system detects bugs during execution, they go into <code>TMP/bugs.txt</code> You can erase the entire contents of the TMP directory a:trny time you want to. But odds are this is not your problem.</p>
@@ -129,7 +129,7 @@
 :pennmatch         - FILE {raw ambig} compare penn file against internal result
 :pennnoun          - locate mass nouns in pennbank
 :pos               - Show results of tokenization and tagging
-:sortconcept       - Prepare concept file alphabetically
+:sortconcept       - Prepare concept file alphabetically (see writeup)
 :translateconcept  - TODO
 :timepos           - compute wps average to prepare inputs
 :verifypos         - Regress pos-tagging using default REGRESS/postest.txt file or named file
@@ -396,6 +396,8 @@ RAWDATA/simpletopic.top # things we can chat about
 <p><code>:retry</code> tells the system to rerun the most recent input on the state of the system a moment ago, and retry it. It should do exactly what it did before, but this time if you have turned on tracing it will trace it.</p>
 <p>It performs this magic in stand-alone mode by copying the user's topic file into the TMP directory before each volley, so it can back up one time if needed. Because it operates from that tmp copy you can, if your log file is currently messy, merely erase all the contents of the USER folder before executing the revert and the log trace will only be from this input.</p>
 <p>You can also put in different input using <code>:retry</code>. This is a fast way to try alternatives in a context and see what the system would do.</p>
+<p>You can also designate a file you want loaded instead (if you have copied some previous user topic file out) by saying</p>
+<pre><code>:retry FILE filepath  _This is my input_</code></pre>
 <p><code>:retry</code> is expected to be used on a stand-alone system. NORMAL servers only allow users in the authorizedip.txt file to use debug commands.. If retry has been server enabled using the command line parameter &quot;serverretry&quot;, thereafter each volley is tracked</p>
 <h3 id="redo-5-this-is-new-input"><code>:redo</code> <em>5 This is new input</em></h3>
 <p><code>:redo</code> is like <code>:retry</code> but takes a volley number and requires substitute input.</p>
@@ -567,5 +569,11 @@ RAWDATA/ONTOLOGY/prepositionhierarchy.top</code></pre>
 <p>To resume the old conversation as though you had never left, login with <code>loginname:&amp;</code>. If before you were user bruce, login as <code>bruce:&amp;</code> . Now if you say what you said before, it should crash just the same. Not that that will do most of you any good, but it's handy if you can debug src code.</p>
 <h2 id="when-all-else-fails">When all else fails</h2>
 <p>Usually you can email me for advice and solutions.</p>
+<h1 id="sortconcept">:sortconcept</h1>
+<p>This takes one or all concepts currently compiled, and can neaten them up in various ways.</p>
+<p><code>:sortconcept ~concept 1</code> will take the named concept and write it out to <code>cset.txt</code> as a single line, with members sorted alphabetically.</p>
+<p><code>:sortconcept ~concept 0</code> will take the named concept and write it out to <code>cset.txt</code> as a multiple tidy lines, with members sorted alphabetically.</p>
+<p><code>:sortconcept 1</code> will take the all built concept and write them out to <code>concepts.top</code> as a single line, with members sorted alphabetically and concept declarations sorted alphabetically. You can use this output to replace your original scripted concepts.</p>
+<p><code>:sortconcept 0</code> will take the all built concept and write them out to <code>concepts.top</code> as a multiple line, with members sorted alphabetically. If you want the concept declarations sorted alphabetically, first do <code>:sortconcept 1</code>, then take <code>concepts.top</code> and replace your original script concepts from it. Then do this and then replace your original script concepts from this.</p>
 </body>
 </html>

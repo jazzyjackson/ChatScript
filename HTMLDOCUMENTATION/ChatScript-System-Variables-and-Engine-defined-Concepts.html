@@ -9,7 +9,10 @@
 </head>
 <body>
 <h1 id="chatscript-system-variables-and-engine-defined-concepts">ChatScript System Variables and Engine-defined Concepts</h1>
-<p>© Bruce Wilcox, gowilcox@gmail.com www.brilligunderstanding.com <br>Revision 2/09/2017 cs7.2 <br></p>
+<p>© Bruce Wilcox, gowilcox@gmail.com www.brilligunderstanding.com</p>
+<blockquote>
+<p>Revision 3/4/2017 cs7.3</p>
+</blockquote>
 <ul>
 <li><a href="ChatScript-System-Variables-and-Engine-defined-Concepts.html#engine-defined-concepts">Engine-defined Concepts</a></li>
 <li><a href="ChatScript-System-Variables-and-Engine-defined-Concepts.html#system-variables">System Variables</a></li>
@@ -501,6 +504,10 @@
 <td><code>%restart</code></td>
 <td>You can set and retrieve a value here across a system restart.</td>
 </tr>
+<tr class="odd">
+<td><code>%timeout</code></td>
+<td>Boolean tells if a timeout has happened, based on the timelimit command line parameter</td>
+</tr>
 </tbody>
 </table>
 <h2 id="build-data">Build data+</h2>
@@ -639,14 +646,18 @@
 <td>perform pos-tagging only if all words are known. Avoids wasting time on foreign sentences in particular</td>
 </tr>
 <tr class="even">
+<td><code>NO_CONDITIONAL_IDIOM</code></td>
+<td>will not perform substitutions in the dictionary which are considered conditional idioms</td>
+</tr>
+<tr class="odd">
 <td><code>NO_ERASE</code></td>
 <td>where a substitution would delete a word entirely as junk, don't</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><code>DO_SPLIT_UNDERSCORES</code></td>
 <td>happens after all other input tokenization and adjustments except number merge, and separates words that have been conjoined either because the dictionary has them (<em>credit_card</em>) or because they were merged by proper name merging, or by substitution. The result is only words without underscores (excluding number words like <em>five_thousand_and_four</em></td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><code>MARK_LOWER</code></td>
 <td>if a word is considered a proper name in CS and is marked as an upper case word, this will force it to perform any markings for its lower case form as well. Sometimes users type stuff in upper case that really should be lower</td>
 </tr>

@@ -166,9 +166,15 @@ int factsJsonHelper(char *jsontext, jsmntok_t *tokens, int tokenlimit, int sizel
 	switch (curr.type) {
 	case JSMN_PRIMITIVE: { //  true  false, numbers, null
 		char* limit;
-		char* str = InfiniteStack(limit,"factsJsonHelper");
+		char str[1000];
+		if (size >= 1000)
+		{
+			if (!nofail) ReportBug((char*)"Bad Json primitive size  %s",  jsontext); // if we are not expecting it to fail
+			return 0;
+		}
 		strncpy(str,jsontext + curr.start,size);
 		str[size] = 0;
+
 		if (!strnicmp(str,"ja-",3)) *flags = JSON_ARRAY_VALUE; 
 		else if (!strnicmp(str,"jo-",3)) *flags = JSON_OBJECT_VALUE;
 		else *flags = JSON_PRIMITIVE_VALUE; // json primitive type
@@ -199,7 +205,6 @@ int factsJsonHelper(char *jsontext, jsmntok_t *tokens, int tokenlimit, int sizel
 				if (result != NOPROBLEM_BIT) 
 				{
 					if (!nofail) ReportBug((char*)"Bad Json path building facts from templace %s%s data: %s", str,mainpath,jsontext); // if we are not expecting it to fail
-					FreeBuffer();
 					return 0;
 				}
 				else strcpy(str,word);
@@ -220,7 +225,7 @@ int factsJsonHelper(char *jsontext, jsmntok_t *tokens, int tokenlimit, int sizel
 			else if (!strncmp(str,(char*)"jo-",3)) 
 			{
 				*flags = JSON_OBJECT_VALUE;
-				MEANING M = jcopy(StoreWord(str)); // json never shares ptrs
+				MEANING M = jcopy(StoreWord(str,AS_IS)); // json never shares ptrs
 				WORDP D = Meaning2Word(M);
 				strcpy(str,D->word);
 			}
@@ -228,7 +233,6 @@ int factsJsonHelper(char *jsontext, jsmntok_t *tokens, int tokenlimit, int sizel
 			else *flags = JSON_STRING_VALUE; // cannot be number
 		}
 		*retMeaning = MakeMeaning(StoreWord(str,AS_IS)); 
-		ReleaseInfiniteStack();
 		break;
 	}
 	case JSMN_STRING: {

@@ -13,7 +13,7 @@
 <p>© Bruce Wilcox, gowilcox@gmail.com brilligunderstanding.com</p>
 </blockquote>
 <blockquote>
-<p>Revision 7/3/2014 cs5.5</p>
+<p>Revision 3/4/2017 cs7.3</p>
 </blockquote>
 <ul>
 <li><a href="ChatScript-Document-Reader.html#reading-documents">Reading Documents</a></li>
@@ -115,8 +115,9 @@ u: (_*) refine()
 <p>Normally you don't have to pay attention to memory management in ChatScript. It starts out with a pool of available facts, dictionary nodes, and text string space (which you can control) and uses and releases that as appropriate after each volley. But when you can read all of Wikipedia as one volley (since everything read by <code>:document</code> is a single volley), all bets are off. When you run out of preallocated memory, you die.</p>
 <p>As scary as that sounds, it will likely not be a problem. CS automatically cleans up, releases used memory, and writes out the current user's state into his topic files at the end of every document read (eg when reading a directory of documents). CS can easily handle a 10MB document file in Windows. With Linux I understand memory allocation much less and have to reserve a smaller memory pool. Maybe there is some way to raise the default process memory limit that I don't know about. If you know how to use more space in Linux, please let me know.</p>
 <p>However, if for each sentence in a document you create facts, then those facts will get written out into the user topic file and read back in again. This means at some point the topic file will get bigger than is allowed, or you will be accumulating too many facts. If you want to generate a lot of facts, you need to write out your facts into a separate file. Those facts should become part of the base system that gets loaded in on startup, not part of the user's own fact space. I will try to remember to document how to do that at some point in the future. Otherwise, you can write your data using ^log into files for some other future use.</p>
-<p>If you want to monitor how big a document you can manage, use the stats parameter to tell you after each document how much was used up and how much was still available. See also <code>^memorymark()</code>/<code>^memoryfree()</code> for controlling memory use. And be aware that setting user variables uses memory.</p>
-<p>If you set a variable like <code>$$linecount</code> for every sentence you read, you are using up text memory on every assignment. You can reduce this burden by using the match variables like _19 whenever you can. Match variables above _10 are unlikely to ever be used in your patterns, so they can hold temporary data in a way that requires no additional memory per assignment.</p>
+<p>If you want to monitor how big a document you can manage, use the stats parameter to tell you after each document how much was used up and how much was still available. See also <code>^memorymark()</code>/<code>^memoryfree()</code> for controlling memory use as well as <code>^memorygc</code>.</p>
+<p>Be aware that setting $ and <br /><span class="math display">$$ user variables uses memory. 
+If you set a variable like `$$</span><br />linecount<code>for every sentence you read,  you are using up text memory on every assignment. You can reduce this burden by using the match variables like _19 or temp variables like</code>$_tmp`. whenever you can. Match variables above _10 are unlikely to ever be used in your patterns, so they can hold temporary data in a way that requires no additional memory per assignment.</p>
 <p>Match variable are initialized at startup of ChatScript and hold their values until explicitly overwritten by script. Even if your bot does nothing while reading, you may find it useful to use <code>:document</code> with echo, and get every sentence of document, one-per-line, written out for some other tool.</p>
 <h1 id="debugging-documents">Debugging Documents</h1>
 <p>You can place any <code>:xxx</code> command at the start of lines in a document file and the system will treat that line as a command and execute it.</p>
@@ -147,18 +148,5 @@ u: (_*) refine()
 [header ] Later years .</code></pre>
 <p>Whenever bullet points exist in the wiki, those will be reflected as: <code>[ * ]</code> this was bulleted text The categorization information is output as:</p>
 <pre><code>[category ] Movie Actors .</code></pre>
-<h3 id="memorymark"><code>^memorymark</code>()</h3>
-<p>Reading a document consists of performing a single volley of the entire document. This can tie up a lot of memory in keeping facts, dictionary entries, user variables, etc. If you are careful in what you do, you can make the memory burden go away. <code>^memoryMark()</code> notes where memory is currently at, and is best done within the document_pre topic. Then you can release memory after every sentence of the document, so it doesn't accumulate.</p>
-<h3 id="memoryfree"><code>^memoryfree</code>()</h3>
-<p>This releases memory back to the last ^memorymark(). It is best done after your main control of the document bot has finished processing a sentence. E.g.,</p>
-<pre><code>topic: ~document_pre system repeat()
-t: ^memorymark() # note start
-  Log(OUTPUT_ECHO \n Begin $$document ) # instant display
-
-topic: ~main_control system repeat () # executed each sentence of document
-u: (%document)
-  respond(~filter)
-  ^memoryfree()</code></pre>
-<p>The caveats and warnings about how this works. Whenenver you free memory, the system will clear all fact sets. It will clear all user variables set after the memory mark (leaving the ones before alone). It will then release facts, text, and dictionary nodes created after the mark.</p>
 </body>
 </html>

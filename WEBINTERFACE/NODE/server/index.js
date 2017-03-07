@@ -13,7 +13,7 @@ module.exports = props =>
             </form>
             <div class="message">
                 <div class="output">
-                    ${props.botResponse.output}
+                    <p>${props.botResponse.output}</p>
                 </div>
             </div>
         </div>

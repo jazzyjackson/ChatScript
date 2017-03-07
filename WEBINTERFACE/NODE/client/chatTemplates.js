@@ -2,7 +2,7 @@
 const renderInput = botResponse => 
 `<div class="message">
     <div class="input">
-        <h3>${botResponse.input}</h3>
+        <p>${botResponse.input}</p>
     </div>
  </div>
 `
@@ -17,7 +17,7 @@ const renderDiagnostics = botResponse =>
 const renderOutput = botResponse => 
 `<div id="${botResponse.hash}" class="message">
     <div class="output">
-        <h3>${botResponse.output.trim()}</h3>
+        <p>${botResponse.output.trim()}</p>
         ${botResponse.type == 'shell' ? renderCode(botResponse) : '' }
         ${botResponse.type == 'sql' ? renderTable(botResponse) : '' }
         ${botResponse.type == 'image' ? `<img src='./static/img/${botResponse.command}'/>` : '' }

@@ -1796,7 +1796,7 @@ static void VerifyAccess(char* topic,char kind,char* prepassTopic) // prove patt
 						Log(STDTRACETABLOG,(char*)"Bad sample rule %d %s  For: %s \r\n   want- %d.%d %s\r\n   got - %s => %s",++err,topic,test,
 							TOPLEVELID(verifyRuleID),REJOINDERID(verifyRuleID),tmp,
 							responseData[0].id+1,ShowRule(gotrule));
-						if (*gotrule2) Log(STDTRACELOG,(char*)"\n   via %s.%d.%d: %s" ,GetTopicName(replytopic2),TOPLEVELID(gotid2),REJOINDERID(gotid2),gotrule2);
+						if (*gotrule2) Log(STDTRACELOG,(char*)"\r\n   via %s.%d.%d: %s" ,GetTopicName(replytopic2),TOPLEVELID(gotid2),REJOINDERID(gotid2),gotrule2);
 							Log(STDTRACELOG,(char*)"\r\n\r\n");
 					}
 					*end = ENDUNIT;
@@ -3982,7 +3982,6 @@ static void C_Build(char* input)
 		if (file[len-1] == '0') buildId = BUILD0;
 		else if  (file[len-1] == '2') buildId = BUILD2;
 		else buildId = BUILD1; // global so SaveCanon can work
-		ClearVolleyWordMaps();
 		char file[200];
 		sprintf(file,"%s/missingSets.txt",topic);
 		remove(file); // precautionary
@@ -3996,6 +3995,7 @@ static void C_Build(char* input)
 		if (!stricmp(computerID,(char*)"anonymous")) *computerID = 0;	// use default
 		ClearPendingTopics(); // flush in case topic ids change or go away
 		ClearVolleyWordMaps();
+		PartiallyCloseSystem();
 		CreateSystem();
 		systemReset = (reset) ? 2 : 1;
 	}
@@ -5217,7 +5217,7 @@ static void C_Concepts(char* input)
 		if (*E->word == '~') Log(STDTRACELOG,(E->internalBits & TOPIC) ? (char*) "T%s " : (char*) "%s ",E->word);
 		ShowConcepts(*meaningList++);
 	}
-	Log(STDTRACELOG,(char*)"\n");
+	Log(STDTRACELOG,(char*)"\r\n");
 
 	FreeBuffer();
 }
@@ -5850,7 +5850,7 @@ static void ShowQuery(WORDP D,uint64 junk)
 		if (D->internalBits & BUILD0) Log(STDTRACELOG,(char*)"BUILD0 ");
 		if (D->internalBits & BUILD1) Log(STDTRACELOG,(char*)"BUILD1 ");
 		if (D->internalBits & BUILD2) Log(STDTRACELOG,(char*)"BUILD2 ");
-		Log(STDTRACELOG,(char*)"Query: %s \"%s\"\n",D->word,D->w.userValue);
+		Log(STDTRACELOG,(char*)"Query: %s \"%s\"\r\n",D->word,D->w.userValue);
 	}
 }
 
@@ -7086,14 +7086,17 @@ static void C_Silent(char* input)
 
 static void C_Retry(char* input)
 {
-	char file[SMALL_WORD_SIZE];
 	if (server && !serverRetryOK) return;
+
+	char file[MAX_WORD_SIZE];
+	char name[MAX_WORD_SIZE];
 
 	char word[MAX_WORD_SIZE];
 	ResetToPreUser();
 	ResetSentence();
 	char which[20];
 	*which = 0;
+	*name = 0;
 	if (!strnicmp(SkipWhitespace(mainInputBuffer),(char*)":redo",5) && redo)
 	{
 		char* at = ReadCompiledWord(input,word); // input is after turn
@@ -7108,17 +7111,27 @@ static void C_Retry(char* input)
 				*which = 0; // ordinary retry
 			}
 		}
+		else if (!stricmp(word, "FILE"))
+		{
+			input = ReadCompiledWord(at, name);
+			if (shared) return;	// shared subsitution not supported yet
+		}
 	}
 	input = SkipWhitespace(input);
 	if (!*input) strcpy(mainInputBuffer,revertBuffer);
 	else strcpy(mainInputBuffer,input);
 	if (!server) printf((char*)"Retrying with: %s\r\n",mainInputBuffer);
 
-	// get main user file
-	sprintf(file,(char*)"%s/topic_%s_%s.txt",users,loginID,computerID);
-	char name[MAX_WORD_SIZE];
-	sprintf(name,(char*)"TMP/backup%s-%s_%s.bin",which,loginID,computerID);
-	CopyFile2File(file,name,false);	
+	// get main user file name
+	sprintf(file, (char*)"%s/topic_%s_%s.txt", users, loginID, computerID);
+	if (stricmp(language, "english")) sprintf(file, (char*)"%s/topic_%s_%s_%s.txt", users, loginID, computerID, language);
+	
+	if (!*name) // if not overridden, use default backup data
+	{
+		sprintf(name, (char*)"TMP/backup%s-%s_%s.bin", which, loginID, computerID);
+		if (stricmp(language, "english")) sprintf(name, (char*)"TMP/backup%s-%s_%s_%s.bin", which, loginID, computerID, language);
+	}
+	CopyFile2File(file, name, false);
 	char* buffer = FindUserCache(file); //  (does not trigger a read, assumes it has it in core)
 	if (buffer) FreeUserCache(); // erase cache of user so it reads revised disk file
 
@@ -7126,8 +7139,11 @@ static void C_Retry(char* input)
 	if (shared)
 	{
 		sprintf(file,(char*)"%s/topic_%s_%s.txt",users,loginID,(char*)"share");
+		if (stricmp(language,"english")) sprintf(file, (char*)"%s/topic_%s_%s_%s.txt", users, loginID, language,(char*)"share");
+		
 		sprintf(name,(char*)"TMP/backup%s-share-%s_%s.bin",which,loginID,computerID);
-		CopyFile2File(file,name,false);	
+		if (stricmp(language, "english")) sprintf(name, (char*)"TMP/backup%s-share-%s_%s_%s.bin", which, loginID, computerID,language);
+		CopyFile2File(file,name,false);
 		buffer = FindUserCache(file); //  (does not trigger a read, assumes it has it in core)
 		if (buffer) FreeUserCache(); // erase cache of user so it reads revised disk file
 	}
@@ -8011,7 +8027,7 @@ static void BuildDummyConcept(WORDP D,uint64 junk)
 static void SortConcept(WORDP D,uint64 junk)
 {
 	if (*D->word == '~')
-		Sortit(D->word,(int)junk); // will be 0 for no input, some char value otherwise
+		Sortit(D->word,(int)junk); // 1 will be for 1line, otherwise take multiline as needed
 }
 
 char* UrlEncode(char* input);
@@ -8039,21 +8055,49 @@ static void Translate(char* msg,char* to, char* apikey)
 	char* at = strstr(msg,"translatedText");
 	if (http_response != 200 || !at)  ReportBug("FATAL: translate failure %s\r\n",msg);
 	at += 4 + 14; // start of answer past the quote
-	while (1)
+	char word1[100];
+	char phrase[MAX_WORD_SIZE];
+	*phrase = 0;
+	while (at = ReadCompiledWord(at, word1))
 	{
-		if (*at == '\\')
+		if (!*word1) break;
+		char *ptr = strchr(word1,';'); // every word/phrase will have a trailing semi-colon
+		if (ptr)
 		{
-			if (at[1] == '"' && at[2] == '\\' && at[3] == '"') at += 4;// empty string
+			*ptr = 0; // found the end of the translation
+			if (*phrase) {
+				// had previously started a phrase, so copy it over as a quoted string
+				strcat(phrase, word1);
+				strcat(phrase, "\" ");
+				strcpy(msg, phrase);
+				msg += strlen(phrase);
+				*phrase = 0;
+			}
 			else
 			{
-				++at; // dont show the escape
-				*msg++ = *at++;	
+				// single word translation
+				strcpy(msg, word1);
+				msg += strlen(word1);
+				*msg++ = ' ';
 			}
 		}
 		else
 		{
-			if (*at == '"') break;	// end of data
-			*msg++ = *at++;
+			// not reached the end of the phrase, so just save this word for now
+			if (!*phrase && *word1 == '!')
+			{
+				strcat(phrase, "!\"");
+				if (*(word1+1))
+				{
+					strcat(phrase, word1+1);
+					strcat(phrase, " ");
+				}
+			}
+			else {
+				if (!*phrase) strcat(phrase, "\"");
+				strcat(phrase, word1);
+				strcat(phrase, " ");
+			}
 		}
 	}
 	*msg = 0;
@@ -8062,12 +8106,28 @@ static void Translate(char* msg,char* to, char* apikey)
 static void C_TranslateConcept(char* input) // give the language & filename to write
 {
 #ifdef INFORMATION
-	1. first use :sortconcept to get data into concepts.top using noboot
+	1. first use :sortconcept to get data into concepts.top 
 	2. use the apikey command line parameter to name a google translate account
 	3. :translateconcept german filename  (or some other supported language)
 #endif
 	char language[100];
 	input = ReadCompiledWord(input,language);
+	char* source = "concepts.top";
+	if (*language == '~') // single concept named
+	{
+		WORDP X = FindWord(language);
+		if (!X)
+		{
+			printf("No such concept %s\r\n", language);
+			return;
+		}
+		FClose(FopenUTF8Write((char*)"cset.txt"));
+		Sortit(X->word, 1); /// 1 will be for 1line, otherwise take multiline as needed
+		input = ReadCompiledWord(input, language);
+		source = "cset.txt";
+		if (!language) return; // just sort it. no translate
+	}
+
 	MakeUpperCase(language);
 	char* into = NULL;
 	if (!stricmp(language,"GERMAN")) into = "de";
@@ -8077,7 +8137,7 @@ static void C_TranslateConcept(char* input) // give the language & filename to w
 	else if (!stricmp(language,"RUSSIAN")) into = "ru";
 	else if (!stricmp(language,"HINDI")) into = "hi";
 
-	FILE* in = fopen("concepts.top","rb");
+	FILE* in = FopenReadOnly(source);
 	if (!in)
 	{
 		printf("No such file\r\n");
@@ -8086,7 +8146,7 @@ static void C_TranslateConcept(char* input) // give the language & filename to w
 	char* output = AllocateBuffer();
 	char* outputforeign = AllocateBuffer();
 	char* translation = AllocateBuffer();
-	char name[100];
+	char name[MAX_WORD_SIZE];  // make large enough to handle long string of ####'s
 	char filex[200];
 	*filex = 0;
 	ReadCompiledWord(input,filex);
@@ -8105,15 +8165,20 @@ static void C_TranslateConcept(char* input) // give the language & filename to w
 		char* ptr = readBuffer;
 		ptr = ReadCompiledWord(ptr,name);	// concept:
 		if (*name == '#') continue;	 // commented out
+		if (stricmp(name, "concept:")) continue;
+		char *at;
+		bool found = false;
+		char *lastword;
+		lastword = ptr;
 		while ((ptr = ReadCompiledWord(ptr,name))) // get header
 		{
 			if (!*name) break;
-			if ((unsigned char) name[0] ==  0xEF && (unsigned char) name[1] == 0xBB && (unsigned char) name[2] == 0xBF) // UTF8 BOM
-				memmove(name,name+3,strlen(name+3));
-			if (*name == '(' && name[1]) 
+			if ((at = strchr(name, '(')))
 			{
-				ptr -= strlen(name);
-				name[1] = 0;
+				*at = 0;
+				ptr = strchr(lastword,'(') + 1;
+				if (!*name) break;
+				found = true;
 			}
 			if (!*output)
 			{
@@ -8128,32 +8193,65 @@ static void C_TranslateConcept(char* input) // give the language & filename to w
 			MakeUpperCase(name);
 			strcat(output,name);
 			strcat(output," ");
-			if (*name == '(') break;	
+			if (found) break;
+			lastword = ptr;
 		}
-		if (*name != '(') continue; // poor start
+		if (!*output) continue; // poor start
+		strcat(output, "( ");
 
+		found = false;
 		while ((ptr = ReadCompiledWord(ptr,name))) // get content
 		{
-			if (strchr(name+1,'~') ) continue; //  dict refs need no translation
-			if (*name == ')') break;	
-			if (*name == '~') // maintain concept hierarchies
+			if (!*name || *name == '#')
+			{
+				// reached end of line before the closing parenthesis, or found a comment
+				if (ReadALine(readBuffer, in) < 0) break;
+				ptr = readBuffer;
+				continue;
+			}
+			if ((at = strchr(name, ')')))
+			{
+				*at = 0;
+				if (!*name) break;
+				found = true;
+			}
+			if (*name == '~' || (*name == '!' && *(name+1) == '~') ) // maintain concept hierarchies
 			{
 				strcat(output,name);
 				strcat(output," ");
+				if (found) break;
 				continue;
 			}
+			if ((at = strchr(name + 1, '~'))) *at = 0;
 
-			// add for translation
+			// need to treat each word/phrase distinctly as translation might be to a number of words
 			char* at;
-			if (strchr(name,'_'))
-			{
-				while ((at = strchr(name,'_'))) {*at = ' ';} // use space instead of underscore
-				strcat(name,"\"");
-				memmove(name+1,name,strlen(name)+1);
-				*name = '"';
+			while ((at = strchr(name, '_'))) 
+			{ 
+				if (*(at+1) == '\'') // collapse possessive 
+				{
+					size_t x = strlen(name) - (at - name);
+					memmove(at, at + 1, x);
+				}
+				else
+				{
+					*at = ' ';  // use space instead of underscore
+				}
 			}
-			strcat(outputforeign,name);
-			strcat(outputforeign," ");
+			at = name + strlen(name) - 1;
+			// remove quotes because it interferes with how Google translates a phrase
+			if (*name == '\"')
+			{
+				*at-- = 0;
+				memmove(name, name + 1, strlen(name));
+			}
+			strcat(outputforeign, name);
+			if (*at == '.') // put a space after an abbreviation so Google behaves
+			{
+				strcat(outputforeign, " ");
+			}
+			strcat(outputforeign, "; "); // add our own punctuation character to indicate end of word/phrase
+			if (found) break;
 		}
 
 		// translate and dump the result
@@ -8169,13 +8267,11 @@ static void C_TranslateConcept(char* input) // give the language & filename to w
 			if (len > 3500)
 			{
 				char* at = start-1;
-				bool quote = false;
 				char* lasthole = NULL;
 				while (++at)
 				{
 					if ((at-start) > 3500) break; // accept last hole
-					if (*at == '"') quote = !quote;
-					else if (*at == ' ' && !quote) lasthole = at;
+					else if (*at == ';') lasthole = at + 1;
 				}
 				strncpy(translation,start,lasthole-start);
 				translation[lasthole-start] = 0;
@@ -8198,7 +8294,7 @@ static void C_TranslateConcept(char* input) // give the language & filename to w
 		if (strlen(output) >= MAX_BUFFER_SIZE) ReportBug("translate too big");
 		if (strnicmp(output,"~a_dummy",8))
 		{
-			fprintf(out,"#%s %s)\r\n",language,output);
+			fprintf(out,"#%s concept: %s )\r\n",language,output);
 			printf("%s\r\n",output);
 
 			// augmented vocab
@@ -8226,37 +8322,51 @@ static void C_TranslateConcept(char* input) // give the language & filename to w
 static void C_SortConcept(char* input)
 {
 #ifdef INFORMATION
-To get concepts in a file sorted alphabetically (both by concept and within) , do 
-    0. empty TOPICS
-	0. :build concept0 
-	1. :sortconcept x		-- builds one concept per line and sorts the file by concept name  outputs to concepts.top
-	2. take the contents of concepts.top that was written at top level and replace the original file in ONTOLOGY, erase TOPICS
-	3. :build concept0
-	4. :sortconcept			-- maps concepts neatly onto multiple lines
-	5. take the contents of cset.txt and replace the original file
+	To get concepts in a file sorted alphabetically(both by concept and within), do
+		0. empty TOPICS
+		0. :build concept0
+		1. : sortconcept x		-- builds one concept per line and sorts the file by concept name  outputs to concepts.top
+		2. take the contents of concepts.top that was written at top level and replace the original file in ONTOLOGY, erase TOPICS
+		3. : build concept0
+		4. : sortconcept			-- maps concepts neatly onto multiple lines
+		5. take the contents of cset.txt and replace the original file
 
-If you are trying to get level 1 concepts from a bot, then 
-	1. delete BUILD0
-	2. :build botname
-	3. if you use boot startup, set a command line parameter to "noboot"
-	4. :sortconcept x  -- one concept per line
+		If you are trying to get level 1 concepts from a bot, then
+		1. delete BUILD0
+		2. : build botname
+		3. if you use boot startup, set a command line parameter to "noboot"
+		4. : sortconcept x  -- one concept per line
 #endif
-	WORDP D = StoreWord((char*)"~a_dummy",AS_IS);
-	if (*input) 
+	WORDP D = StoreWord((char*)"~a_dummy", AS_IS);
+	char which[100];
+	int64 flags;
+	input = ReadCompiledWord(input, which);
+	if (*which == '~')  input = ReadInt64(input, flags);
+	else input = ReadInt64(input,flags);
+	if (*which != '~') // do all concepts and tie to dummy
 	{
-		WalkDictionary(BuildDummyConcept,0); // stores names of concepts on dummy concept, to lock position in dictionary. later not, will be read in
-		AddInternalFlag(D,BUILD0|CONCEPT);
+		WalkDictionary(BuildDummyConcept, 0); // stores names of concepts on dummy concept, to lock position in dictionary. later not, will be read in
+		AddInternalFlag(D, BUILD0 | CONCEPT);
 	}
 
 	FClose(FopenUTF8Write((char*)"cset.txt"));
-	if (!*input) // hide this on second pass
+	if (!flags) // hide this on second pass
 	{
 		WORDP D = FindWord((char*)"~a_dummy");
-		RemoveInternalFlag(D,BUILD0);
+		RemoveInternalFlag(D, BUILD0);
 	}
-	WalkDictionary(SortConcept,(uint64)input[0]);
-	if (*input) system((char*)"sort /rec 63000 c:/chatscript/cset.txt >concepts.top");
-	else system((char*)"copy c:/chatscript/cset.txt >concepts.top");
+	if (*which == '~')
+	{
+		WORDP D = FindWord(which);
+		if (D) SortConcept(D, flags);
+		else printf("No such concept %s\r\n", which);
+	}
+	else
+	{
+		WalkDictionary(SortConcept, flags); // 0 (1 per line) or 1 (spread per concept)
+		if (flags) system((char*)"sort /rec 63000 c:/chatscript/cset.txt >concepts.top");
+		else system((char*)"copy c:/chatscript/cset.txt >concepts.top");
+	}
 }
 
 //////////////////////////////////////////////////////////
@@ -9688,7 +9798,7 @@ CommandInfo commandSet[] = // NEW
 void SortTopic(WORDP D,uint64* junk)
 {
 	if (!(D->internalBits & (BUILD0|BUILD1|BUILD2))) return; // ignore internal system topics (of which there are none)
-	if (D->internalBits & TOPIC) Sortit(D->word,(int)(long long)junk);
+	if (D->internalBits & TOPIC) Sortit(D->word,(int)(long long)junk); // 1 will be for 1line, otherwise take multiline as needed
 }
 
 void SortTopic0(WORDP D,uint64 junk)

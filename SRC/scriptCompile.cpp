@@ -25,6 +25,7 @@ static unsigned int substitutes;
 static unsigned int cases;
 static unsigned int badword;
 static unsigned int functionCall;
+static bool isDescribe = false;
 
 #define MAX_WARNINGS 200
 static char warnings[MAX_WARNINGS][MAX_WORD_SIZE];
@@ -176,6 +177,9 @@ static char* FindComparison(char* word)
 	if (!*word || !word[1] || !word[2]) return NULL; //   if token is short, we cannot do the below word+1 scans 
 	if (*word == '.') return NULL; //  .<_3 is not a comparison
 	if (*word == '\\') return NULL; // escaped is not a comparison
+	if (*word == '!' && word[1] == '?' && word[2] == '$') return NULL;
+	if (*word == '_' && word[1] == '?' && word[2] == '$') return NULL;
+	if (*word == '?' && word[1] == '$') return NULL;
 	char* at = strchr(word+1,'!'); 
 	if (at && *word == '!') at = NULL;	 // ignore !!
 	if (!at) at = strchr(word+1,'<');
@@ -442,7 +446,7 @@ char* ReadSystemToken(char* ptr, char* word, bool separateUnderscore) //   how w
 			++ptr;
 		}
 		char* end = ReadQuote(ptr,word,backslash,noblank);	//   swallow ending marker and points past
-		if (!callingSystem && !chunking && !functionString && *word == '"' && word[1] != '^' && strstr(word,"$_")) 
+		if (!callingSystem && !isDescribe && !chunking && !functionString && *word == '"' && word[1] != '^' && strstr(word,"$_")) 
 			WARNSCRIPT((char*)"%s has potential local var $_ in it. This cannot be passed as argument to user macros. Is it intended to be?\r\n",word)
 		if (end)  
 		{
@@ -540,6 +544,8 @@ char* ReadSystemToken(char* ptr, char* word, bool separateUnderscore) //   how w
 				}
 			}
 			hat = word-1;
+			if (strstr(readBuffer, "rename:")) // accept rename of existing constant twice in a row
+				hat = " ";
 			while ((hat = strchr(hat+1,'#'))) // rename #constant or ##constant
 			{
 				if (*(hat-1) == '\\') continue;	// escaped
@@ -662,7 +668,7 @@ char* ReadSystemToken(char* ptr, char* word, bool separateUnderscore) //   how w
     word = start;
 	size_t len = strlen(word);
 	if (len == 0) return ptr; 
-	if (*word == '#') // is this a constant from dictionary.h? or user constant
+	if (*word == '#' && !strstr(readBuffer,"rename:")) // is this a constant from dictionary.h? or user constant
 	{
 		uint64 n;
 		if (word[1] == '#' && IsAlphaUTF8(word[2])) // user constant
@@ -744,13 +750,19 @@ char* ReadSystemToken(char* ptr, char* word, bool separateUnderscore) //   how w
 	if ( *word == '@' && word[1] == '_' && IsAlphaUTF8(word[2])) // is this a rename @_0+
 	{
 		size_t len = strlen(word);
-		char c = word[len-1];
-		word[len-1] = 0;
-		WORDP D = FindWord(word+1,len-2);
-		word[len-1] = c;
+		WORDP D = FindWord(word + 1, len - 1); // @_data marker
+		char c = 0;
+		if (!D)
+		{
+			c = word[len - 1];
+			word[len - 1] = 0;
+			D = FindWord(word + 1, len - 2);
+			word[len - 1] = c;
+		}
 		if (D && D->internalBits & RENAMED) 
 		{
-			sprintf(word+2,(char*)"%d%c",(unsigned int)D->properties,c); // remap @set in string
+			if (c) sprintf(word+2,(char*)"%d%c",(unsigned int)D->properties,c); // remap @set in string
+			sprintf(word + 2, (char*)"%d", (unsigned int)D->properties); // remap @set in string
 		}
 		else if (!renameInProgress)  WARNSCRIPT((char*)"%s is not a recognized @rename. Is it intended to be?\r\n",word)
 	}
@@ -822,7 +834,8 @@ char* ReadSystemToken(char* ptr, char* word, bool separateUnderscore) //   how w
 		if (compiling) BADSCRIPT((char*)"TOKENS-1 Cannot do comparison on variable gap %s . Memorize and compare against _# instead later. ",word)
 	}
 	
-	if (at) // revise comparison operators
+	if (at && *at == '!' && at[1] == '$') { ; } // allow !$xxx
+	else if (at) // revise comparison operators
 	{
 		if (*at == '!') ++at;
 		++at;
@@ -1962,8 +1975,10 @@ static char* ReadDescribe(char* ptr, FILE* in,unsigned int build)
 			break; 
 		}
 		if (*word != USERVAR_PREFIX && *word != '_' && *word != '^' && *word != '~')
-				BADSCRIPT((char*)"Described entity %s is not legal to describe- must be variable or function or concept/topic",word)
+			BADSCRIPT((char*)"Described entity %s is not legal to describe- must be variable or function or concept/topic", word)
+		isDescribe = true;
 		ptr = ReadNextSystemToken(in,ptr,description,false);
+		isDescribe = false;
 		char file[SMALL_WORD_SIZE];
 		sprintf(file,(char*)"%s/BUILD%s/describe%s.txt",topic,baseName,baseName);
 		FILE* out = FopenUTF8WriteAppend(file);
@@ -2139,7 +2154,8 @@ name of topic  or concept
 				if (memorizeSeen) BADSCRIPT((char*)"PATTERN-19 Cannot use _ before  @")
 				if (word[1] == '_') // set match position  @_5
 				{
-					if (GetWildcardID(word+1) >= MAX_WILDCARDS)  BADSCRIPT((char*)"PATTERN-? %s is not a valid positional reference - must be < %d",word,MAX_WILDCARDS) 
+					if (GetWildcardID(word+1) >= MAX_WILDCARDS) 
+						BADSCRIPT((char*)"PATTERN-? %s is not a valid positional reference - must be < %d",word,MAX_WILDCARDS) 
 					char* end = word + 3; 
 					while (IsDigit(*end)) ++end;
 					if (*end)
@@ -2260,7 +2276,7 @@ name of topic  or concept
 				break;
 			case '?': //   question input ?   
 				if (quoteSeen) BADSCRIPT((char*)"PATTERN-56 Quoting a ? is meaningless.");
-				if (memorizeSeen) BADSCRIPT((char*)"PATTERN-57 Cannot use _ before ?")
+				if (memorizeSeen && word[1] != '$') BADSCRIPT((char*)"PATTERN-57 Cannot use _ before ?")
 				if (variableGapSeen) BADSCRIPT((char*)"PATTERN-58 Cannot have wildcards before ?")
 				break;
 			case USERVAR_PREFIX:	//   user var
@@ -2590,7 +2606,7 @@ static bool ValidIfOperand(char c)
 {
     return (c != '<' && c != '+' && c != '-' && c != '*'
         && c != '/' && c != '&' && c != '|' && c != '%' && c != '='
-        && c != '<' && c != '>' && c != '%' && c != '^' && c != '!' && c != '?');
+        && c != '>' && c != '^' && c != '!' && c != '?');
 }
 
 static char* ReadIfTest(char* ptr, FILE* in, char* &data)
@@ -3374,7 +3390,8 @@ Then one of 3 kinds of character:
 					*name = '^';
 					strcpy(name+1,word);
 					WORDP D = FindWord(name,0,LOWERCASE_LOOKUP);
-					if (D && D->internalBits & FUNCTION_NAME) WARNSCRIPT((char*)"label: %s is a potential macro in %s. Add ^ if you want it treated as such.\r\n",word,currentFilename)
+					if (D && D->internalBits & FUNCTION_NAME && (*kind == GAMBIT || *kind == RANDOM_GAMBIT)) 
+						WARNSCRIPT((char*)"label: %s is a potential macro in %s. Add ^ if you want it treated as such.\r\n",word,currentFilename)
 					else if (!stricmp(word,(char*)"if") || !stricmp(word,(char*)"loop")) WARNSCRIPT((char*)"label: %s is a potential flow control (if/loop) in %s. Add ^ if you want it treated as a control word.\r\n",word,currentFilename)
 					sprintf(info,"        rule: %s.%d.%d-%s %s",currentTopicName,TOPLEVELID(currentRuleID),REJOINDERID(currentRuleID),name+1, kind);
 					AddMap(info,NULL);
@@ -3423,7 +3440,7 @@ Then one of 3 kinds of character:
 			ptr = ReadOutput(false,ptr,in,data,rejoinders,word,NULL);
 			char complex[MAX_WORD_SIZE];
 			sprintf(complex,"          Complexity of rule %s.%d.%d-%s %s %d", currentTopicName,TOPLEVELID(currentRuleID),REJOINDERID(currentRuleID),labelName,kind,complexity);
-			if (complexity != 1) AddMap(NULL, complex);
+			AddMap(NULL, complex);
 
 			//   data points AFTER last char added. Back up to last char, if blank, leave it to be removed. else restore it.
 			while (*--data == ' '); 
@@ -3674,7 +3691,7 @@ static char* ReadMacro(char* ptr,FILE* in,char* kind,unsigned int build)
 
 	char complex[MAX_WORD_SIZE];
 	sprintf(complex,"          Complexity of %s: %d", macroName,complexity);
-	if (complexity != 1) AddMap(NULL, complex);
+	AddMap(NULL, complex);
 
 	return ptr;
 }
@@ -3989,7 +4006,7 @@ static char* ReadKeyword(char* word,char* ptr,bool &notted, bool &quoted, MEANIN
 			if (*ptr == '\'') ++ptr;
 			break;
 		default:
-			if (*word == USERVAR_PREFIX || *word == '_' || *word == SYSVAR_PREFIX) BADSCRIPT((char*)"CONCEPT-? Cannot use $var or _var or %var as a keyword in %s",Meaning2Word(concept)->word);
+			if (*word == USERVAR_PREFIX || (*word == '_' && IsDigit(word[1])) || *word == SYSVAR_PREFIX) BADSCRIPT((char*)"CONCEPT-? Cannot use $var or _var or %var as a keyword in %s",Meaning2Word(concept)->word);
 			if (*word == '~') MakeLowerCase(word); //   sets are always lower case
 			if ((at = strchr(word+1,'~'))) //   wordnet meaning request, confirm definition exists
 			{
@@ -4111,8 +4128,8 @@ static char* ReadTopic(char* ptr, FILE* in,unsigned int build)
 			AddMap((char*)"    topic", currentTopicName);
 			Log(STDTRACELOG,(char*)"Reading topic %s\r\n",currentTopicName);
 			topicName = FindWord(currentTopicName);
-			if (topicName && topicName->internalBits & CONCEPT && !(topicName->internalBits & TOPIC) && topicName->internalBits & (BUILD0|BUILD1|BUILD2)) 
-				BADSCRIPT((char*)"TOPIC-1 Concept already defined with this topic name %s",currentTopicName)
+			if (!myBot && topicName && topicName->internalBits & CONCEPT && !(topicName->internalBits & TOPIC) && topicName->internalBits & (BUILD0|BUILD1|BUILD2))
+				WARNSCRIPT((char*)"TOPIC-1 Concept already defined with this topic name %s",currentTopicName)
 			topicName = StoreWord(currentTopicName);
 			if (!IsLegalName(currentTopicName)) BADSCRIPT((char*)"TOPIC-2 Illegal characters in topic name %s",currentTopicName)
 			topicValue = MakeMeaning(topicName);
@@ -4278,16 +4295,23 @@ static char* ReadRename(char* ptr, FILE* in,unsigned int build)
 		char basic[MAX_WORD_SIZE];
 		ptr = ReadNextSystemToken(in,ptr,word,false);
 		if (!*word) break;
+		if (*word == '#' && (word[1] != '#' || !IsAlphaUTF8(word[2])))
+		{
+			*ptr = 0;
+			break; // comment ends it also
+		}
 
 		if (TopLevelUnit(word)) //   definition ends when another major unit starts
 		{
 			ptr -= strlen(word); //   let someone else see this starter also  // safe
 			break; 
 		}
-		if (*word != '_' && *word != '@' && (*word != '#' || word[1] != '#')) BADSCRIPT((char*)"Rename  %s must start with _ or @ or ##",word)
+		if (*word != '_' && *word != '@' && (*word != '#' || word[1] != '#')) 
+			BADSCRIPT((char*)"Rename  %s must start with _ or @ or ##",word)
 		ptr = ReadNextSystemToken(in,ptr,basic,false);
 		if (*word != '#' && (*basic != *word || !IsDigit(basic[1]) )) BADSCRIPT((char*)"Rename  %s must start same as %s and have a number after it",basic,word)
-		if (*word == '#' && !IsDigit(*basic) && *basic != '-' && *basic != '+') BADSCRIPT((char*)"Rename  %s followed by number or sign as %s",word,basic)
+		if (*word == '#' && !IsDigit(*basic) && *basic != '-' && *basic != '+') 
+			BADSCRIPT((char*)"Rename  %s followed by number or sign as %s",word,basic)
 		MakeLowerCase(word); 
 		int64 n;
 		if (*word == '#') 
@@ -4296,7 +4320,9 @@ static char* ReadRename(char* ptr, FILE* in,unsigned int build)
 			if (*basic == '-') n = -n; // force positive
 		}
 		else ReadInt64(basic+1,n);
-		WORDP D = StoreWord(word,n);
+		WORDP D = FindWord(word);
+		if (D && !myBot)  WARNSCRIPT((char*)"Already have a rename for %s\r\n", word)
+		D = StoreWord(word,n);
 		AddInternalFlag(D,(unsigned int)(RENAMED|build)); 
 		if (*word == '#' && *basic == '-') AddSystemFlag(D,CONSTANT_IS_NEGATIVE);
 		Log(STDTRACELOG,(char*)"Rename %s as %s\r\n",basic,word);
@@ -4662,8 +4688,8 @@ static char* ReadConcept(char* ptr, FILE* in,unsigned int build)
 			undeclared = false; // dont test this again
 			if (!more)
 			{
-				if (D->internalBits & CONCEPT && D->internalBits & (BUILD0|BUILD1|BUILD2))
-					BADSCRIPT((char*)"CONCEPT-3 Concept/topic already defined %s",conceptName)
+				if (!myBot && D->internalBits & CONCEPT && D->internalBits & (BUILD0|BUILD1|BUILD2))
+					WARNSCRIPT((char*)"CONCEPT-3 Concept/topic already defined %s",conceptName)
 			}
 			AddInternalFlag(D,(unsigned int)(build|CONCEPT));
 		}
@@ -5096,6 +5122,7 @@ static void EmptyVerify(char* name, uint64 junk)
 int ReadTopicFiles(char* name,unsigned int build,int spell)
 {
 	int resultcode = 0;
+	isDescribe = false;
 	*botheader = 0;
 	myBot = 0;
 	globalBotScope = false;
@@ -5310,7 +5337,7 @@ int ReadTopicFiles(char* name,unsigned int build,int spell)
 		EraseTopicFiles(build,baseName);
 		DumpErrors();
 		if (missingFiles) Log(ECHOSTDTRACELOG,(char*)"%d topic files were missing.\r\n",missingFiles);
-		Log(ECHOSTDTRACELOG,(char*)"r\n%d errors - press Enter to quit. Then fix and try again.\r\n",hasErrors);
+		Log(ECHOSTDTRACELOG,(char*)"\r\n%d errors - press Enter to quit. Then fix and try again.\r\n",hasErrors);
 		if (!server && !commandLineCompile) ReadALine(readBuffer,stdin);
 		resultcode = 4; // error
 	}

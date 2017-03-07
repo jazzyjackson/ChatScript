@@ -1359,7 +1359,7 @@ retry:
 				{
 					Log(STDTRACETABLOG,"RetryRule on sentence at word %d: ",start+1);
 					for (int i = 1; i <= wordCount; ++i) Log(STDTRACELOG,"%s ",wordStarts[i]);
-					Log(STDTRACELOG,"\n");
+					Log(STDTRACELOG,"\r\n");
 				}
 
 				goto retry;
@@ -2642,8 +2642,8 @@ static void InitMacros(const char* name,const char* layer,unsigned int build)
 		else if (*tmpWord != 'a') ptr = next; // old style define
 		if (D->internalBits & IS_PATTERN_MACRO)
 		{
-			ptr = ReadCompiledWord(ptr,tmpWord);
-			char* x = strchr(ptr,'`');
+			ptr = ReadCompiledWord(ptr, tmpWord);
+			char* x = strchr(ptr, '`');
 			if (x) *x = 0; // not allowed for now
 			while (IsDigit(*ptr)) ++ptr;
 		}

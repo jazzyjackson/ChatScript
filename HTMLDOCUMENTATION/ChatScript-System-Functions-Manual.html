@@ -13,7 +13,7 @@
 <p>© Bruce Wilcox, gowilcox@gmail.com brilligunderstanding.com</p>
 </blockquote>
 <blockquote>
-<p>Revision 2/9/2017 cs7.2</p>
+<p>Revision 3/4/2017 cs7.3</p>
 </blockquote>
 <ul>
 <li><a href="ChatScript-System-Functions-Manual.html#topic-functions">Topic Functions</a></li>
@@ -188,8 +188,8 @@ t: () name(xxx ) # explicitly add an empty pattern</code></pre>
 <h3 id="analyze-stream"><code>^analyze</code>( stream )</h3>
 <p>The stream generates output (not printed to user) and then prepares the content as though it were current input sentence. This means the current sentence flagging and marking are all replaced by this one's. It does not affect any pending input still to be processed. If the stream is quoted string, the quotes are removed. This would be common, for example, when analyzing output from the chatbot gotten via grabbing facts with &quot;chatoutput&quot; as the verb.</p>
 <p>Note that the stream is considered a single sentence. If you want to supply multiple sentences, you need to call <code>^tokenize</code> and then loop on the facts created.</p>
-<h3 id="tokenize-stream"><code>^tokenize</code>( stream )</h3>
-<p>Splits the stream into sentences and creates facts of each like this: <code>(sentence ^tokenize ^tokenize)</code>.</p>
+<h3 id="tokenize-word-sentence-stream"><code>^tokenize</code>( {WORD SENTENCE} stream )</h3>
+<p>WORD or SENTENCE are optional parameters (SENTENCE is default). If SENTENCE, then splits the stream into sentences and creates facts of each like this: <code>(sentence ^tokenize ^tokenize)</code>. If WORD, then splits it entirely into words paying no attention to sentence boundaries.</p>
 <h3 id="capitalized-n"><code>^capitalized</code>( n )</h3>
 <p>Returns <code>1</code> if the nth word of the sentences starts with a capital letter in user input, else returns <code>0</code>. If <code>n</code> is alphabetic, it returns whether or not it starts with a capital letter. Illegal values of n return failrule.</p>
 <h3 id="input"><code>^input</code>( … )</h3>
@@ -211,6 +211,8 @@ t: () name(xxx ) # explicitly add an empty pattern</code></pre>
 <pre><code>u: (_~animals) refine()
     a: ( ^setwildcardindex(1) _~color)</code></pre>
 <p><code>_0</code> is set to an animal. Normally the rejoinder would set a color onto <code>_0</code> and clobber it, but the call to <code>^setwildcardindex</code> forces it to use <code>_1</code> instead, so both <code>_0</code> and <code>_1</code> have values.</p>
+<h3 id="isnormalwordvalue">`^isnormalword(value)</h3>
+<p>Fails if value has a character that is not alphabetic, numberic, a hyphen, an underscore, or an apostrophe.</p>
 <h1 id="number-functions">Number Functions</h1>
 <h3 id="compute-number-operator-number"><code>^compute</code>( number operator number )</h3>
 <p>Performs arithmetic and puts the result into the output stream. Numbers can be integer or float and will convert appropriately. There are a range of operators that have synonyms, so you can pass in directly what the user wrote. The answer will be <code>?</code> if the operation makes no sense and infinity if you divide by <code>0</code>.</p>
@@ -271,6 +273,8 @@ t: () name(xxx ) # explicitly add an empty pattern</code></pre>
 <p>it will start at <code>_3</code>. The items you get are: seconds, minutes, hours, date in month, month name, year, day name of week.</p>
 <h3 id="timetoseconds-seconds-minutes-hours-date-of-month-month-year"><code>^timetoseconds</code>( seconds minutes hours date-of-month month year )</h3>
 <p>This converts time data since 1970 (Unix epoch time). Analogous to <code>%fulltime</code>, which returns the current time in seconds. Month can be number 1-12 or name of month or abbreviation of month.</p>
+<h3 id="isnumbervalue">`^isnumber(value)</h3>
+<p>Fails if value is not an integer, float, or currency,</p>
 <h1 id="output-functions">Output Functions</h1>
 <p>The following functions cannot be used during postprocessing since output has been finished in theory and you can now analyze it.</p>
 <h3 id="flushoutput"><code>^flushoutput</code>()</h3>
@@ -701,6 +705,21 @@ else {$$tcpopen_error}</code></pre>
 <p>which caches the file ptr. After which you can write with OPEN or FILE equivalently. To close the file use</p>
 <pre><code>^log(CLOSE TMP/mylog.txt)</code></pre>
 <p>By default, ^log acts like output to user, converting escaped nr, and t into their actual ascii characters. The flag RESPONSE_NOCONVERTSPECIAL passed in will block this.</p>
+<h3 id="memorymark"><code>^memorymark</code>()</h3>
+<p>Reading a document consists of performing a single volley of the entire document. This can tie up a lot of memory in keeping facts, dictionary entries, user variables, etc. If you are careful in what you do, you can make the memory burden go away. <code>^memoryMark()</code> notes where memory is currently at, and is best done within the document_pre topic. Then you can release memory after every sentence of the document, so it doesn't accumulate.</p>
+<h3 id="memoryfree"><code>^memoryfree</code>()</h3>
+<p>This releases memory back to the last ^memorymark(). It is best done after your main control of the document bot has finished processing a sentence. E.g.,</p>
+<pre><code>topic: ~document_pre system repeat()
+t: ^memorymark() # note start
+  Log(OUTPUT_ECHO \n Begin $$document ) # instant display
+
+topic: ~main_control system repeat () # executed each sentence of document
+u: (%document)
+  respond(~filter)
+  ^memoryfree()</code></pre>
+<p>The caveats and warnings about how this works. Whenenver you free memory, the system will clear all fact sets. It will clear all user variables set after the memory mark (leaving the ones before alone). It will then release facts, text, and dictionary nodes created after the mark.</p>
+<h3 id="memorygc"><code>^memorygc</code>()</h3>
+<p>This can function in either document mode or chat mode. It does what it can to release unused memory. It has restrictions in it does not work if you have facts with facts as fields or are in planning mode. It also discards saved sentence data, recovery data when you modify flags or properties of dictionary entries that are preloaded, and all of your analysis data for the current sentence.</p>
 <h1 id="json-functions">JSON Functions</h1>
 <p>JSON functions and JSON are described more fully in the ChatScript JSON manual.</p>
 <h3 id="jsonarrayinsert-arrayname-value"><code>^jsonarrayinsert</code>( arrayname value )</h3>
@@ -877,7 +896,9 @@ integer floatnumber generate integer if float is exact integer</code></pre>
 <p>Removes named internal flag from word. Currently only value is <code>HAS_SUBSTITUTE</code>, which allows you to disable a word/phrase substitution. Use as word the full text of the left entry in a substitutions file. E.g.,</p>
 <p><constantly> maps to <code>~yes</code> normally. If you do <code>^removeinternalflag( &lt;constantly&gt; HAS_SUBSTITUTE)</code> then it will no longer do that. This is a permanent change to the resident dictionary, which will take effect until the system is reloaded.</p>
 <h3 id="removeproperty-word-value"><code>^removeproperty</code>( word value )</h3>
-<p>Remove this property bit from this word. This effect lasts until the system is reloaded. It is really only useful during the building of the dictionary itself. Value should be all upper case. <code>^walkdictionary('function)</code> calls the named output macro from every word in the dictionary. The function should have 1 argument, the word.</p>
+<p>Remove this property bit from this word. This effect lasts until the system is reloaded. Value should be all upper case. Value is normally a system flag value or a property value from <code>dictionarysystem.h</code> which does not need a hash in front of it (system will look up the name). Word can be in doublequotes. And there are two internal bits that are also allowed to be removed: <code>CONCEPT</code> and <code>HAS_SUBSITUTE</code>. You can use <code>HAS_SUBSTITUTE</code> to disable some standard substitution in LIVEDATA, but you can't apply this at build time because the system won't remember. Instead call it from <code>^csboot</code> during startup.</p>
+<h3 id="walkdictionaryfunction-calls-the-named-output-macro-from-every-word-in-the"><code>^walkdictionary('function)</code> calls the named output macro from every word in the</h3>
+<p>dictionary. The function should have 1 argument, the word.</p>
 <h3 id="iterator-member-concept"><code>^Iterator</code>( ? member ~concept )</h3>
 <p>An iterator is a repeatable fact query that allows you to walk through each member of a concept, either at top level or recursively. Useful in conjunction with a loop(), the function is defined in the planning manual but can be used outside of planning. You can have one iterator in progress per rule.</p>
 <pre><code>loop () # unload every resource on board

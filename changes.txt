@@ -1,3 +1,16 @@
+Version 7.3 3-4-2017
+1. topic files of user stored by language as well as user id and bot name if not english
+2. NO_CONDITIONAL_IDIOM
+3. ^tokenize(WORD xxx ) and tokenize(FULL)
+4. MemoryGC
+5. ?$var  pattern test
+6. %timeout
+7. ^isnormalword(value)   ^isnumber(value)
+8. string comparison in IF or pattern now supports < >  <= >= for string ordering (case insensitive)
+9:  :redo FILE filename xxxxx -- to name file to open instead of std backup of last turn
+10: loglimit=n   where n is number of MB  log rolling
+11. ^removeproperty supports HAS_SUBSTITUTE to turn off a substitution from LIVEDATA
+
 version 7.2  2-9-2017
 1. ^jsonreadcvs takes optional 3rd argument - function to invoke with the fields instead of returning json
 2. ^tokenize($_text) returns facts of (sentence ^tokenize ^tokenize)

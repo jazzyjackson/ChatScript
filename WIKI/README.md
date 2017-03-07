@@ -1,8 +1,8 @@
 # ChatScript Wiki (user guides, tutorials, papers)
 ChatScript Guide To Documentation
 <br>© Bruce Wilcox, gowilcox@gmail.com
-<br>Revision 1/28/2017 cs7.12
 
+> Revision 3/4/2017 cs7.3
 
 ChatScript has a lot of documentation in various manuals, so knowing what to read may seem daunting.
 Here is an overview.
@@ -155,13 +155,13 @@ really advanced users wanting the appropriate mental model.
 * [Paper - Speaker for the Dead](../PAPERS/Paper-%20Speaker%20for%20theDead.pdf)
 <br>Applying chatbots to manage people's accumulations of papers, photos, etc.
 
-* [Paper - Google Talk](PAPERS/Paper%20-%20Google%20Talk.md)
+* [Paper - Google Talk](PAPERS/Paper-Google-Talk.md)
 <br>A talk I gave at Google about my history, CS, and writing code to act out stories
 
 * [Paper - Writing a Chatbot](../PAPERS/Paper-%20Writing%20a%20Chatbot.pdf)
 <br>Useful discussion on how to think about writing a chatbot
 
-* [Paper - ARBOR_ MakingItReal](PAPERS/Paper-%20ARBOR-MakingItReal.md)
+* [Paper - ARBOR_ MakingItReal](PAPERS/Paper-ARBOR-MakingItReal.md)
 <br>Useful discussion on how to think about writing a chatbot
 
 * [Paper - Winning 15 Minute Conversation](../PAPERS/Paper-%20Winning%2015%20Minute%20Conversation.pdf)

@@ -3,7 +3,7 @@
 > © Bruce Wilcox, gowilcox@gmail.com
 
 
-> Revision 1/1/2017 cs7.0
+> Revision 3/4/2017 cs7.3
 
 Pattern matching information was introduced in the Beginner manual and expanded in the Advanced
 Manual. Since pattern matching is of such importance, this concise manual lists everything about
@@ -287,7 +287,6 @@ u: ("king of a jungle")
 ```
 but the above rule can match _kings of the jungle_ since all words in the quote are canonical.
 
-
 ### Memorization - `_`
 Placing an underscore means to memorize what was matched onto a match variable. Match variables
 are allocated in sequence in a pattern, starting with `_0` and increasing to `_1` etc for each memorized
@@ -321,6 +320,8 @@ The relationship operators are:
 
 `?` - if no argument occurs after, means is value found in sentence
 
+Comparing two text strings (not numbers) will do it based on case-independent alpha sorting.
+
 Note: You can put `!` before the tokens instead of using `!=` and `!?`. E.g.,
 ```
 u: ( _~noun !_0?~fruit) if the noun is not in fruit concept
@@ -339,6 +340,8 @@ If you put _take a seat_ as a keyword in a concept or topic or pattern, that phr
 stored in the dictionary and marked as a pattern phrase, meaning if the phrase is ever seen in a
 sentence, it should be noticed and marked so it can be matched in a pattern. But if it is merely in a
 variable, then the dictionary is unaware of the phrase and so `$var?` will not work for it.
+
+There is also a ?$var form, which means see if the value of the variable is findable. The value can be either a word or a concept name.
 
 
 ### Escape - `\`

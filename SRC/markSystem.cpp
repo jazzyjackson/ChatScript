@@ -631,7 +631,6 @@ void MarkAllImpliedWords()
 		if (!*original)
 			continue;	// ignore this
 		if (!wordCanonical[i] || !*wordCanonical[i]) wordCanonical[i] = original; // in case failure below
-		bool placeNumber = false;
 
 		if (showMark) Log(ECHOSTDTRACELOG,(char*)"\r\n");
 		NextInferMark(); // blocks circular fact marking.
@@ -722,15 +721,13 @@ void MarkAllImpliedWords()
 			MarkFacts(ucase,Mnumber,i,i); 
 
 			//   handle finding fractions as 3 token sequence  mark as placenumber 
-			if (i < wordCount && *wordStarts[i+1] == '/' && wordStarts[i+1][1] == 0 && finalPosValues[i+2] & (NOUN_NUMBER | ADJECTIVE_NUMBER))
+			if (i < wordCount && *wordStarts[i+1] == '/' && wordStarts[i+1][1] == 0 && IsDigitWord(wordStarts[i+2]) )
 			{
-				placeNumber = true;
 				MarkFacts(ucase,MakeMeaning(Dplacenumber),i,i);  
 				if (trace & TRACE_PREPARE || prepareMode == PREPARE_MODE) Log(STDTRACELOG,(char*)"=%s/%s \r\n",wordStarts[i],wordStarts[i+2]);
 			}
 			else if (IsDigit(*wordStarts[i]) && IsPlaceNumber(wordStarts[i])) // finalPosValues[i] & (NOUN_NUMBER | ADJECTIVE_NUMBER) 
 			{
-				placeNumber = true;
 				MarkFacts(ucase,MakeMeaning(Dplacenumber),i,i);  
 			}
 			// special temperature property
@@ -845,7 +842,7 @@ void MarkAllImpliedWords()
 			MarkFacts(ucase,Mnumber,i,i,true);  
 			// let's mark kind of number also
 			if (strchr(wordStarts[i],'.')) MarkFacts(ucase,MakeMeaning(StoreWord("~float")),i,i,true); 
-			else if (!placeNumber) 
+			else  
 			{
 				MarkFacts(ucase,MakeMeaning(StoreWord("~integer")),i,i,true);
 				if (*wordStarts[i] != '-') MarkFacts(ucase,MakeMeaning(StoreWord("~positiveInteger")),i,i,true);

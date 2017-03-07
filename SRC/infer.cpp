@@ -354,8 +354,13 @@ static void AddWordOrSet2Scan(unsigned int how, char* word,int depth)
 	}
 	else 
 	{
-		if (*word == '\'') ++word;
-		AddWord2Scan(how, ReadMeaning(word,true,true),0,depth,0);
+		if (*word == '\'')
+		{
+			// WORDP D = FindWord(word);
+			//if (!D) 
+			++word; // but dont harm 'tween_decks which is natural
+		}
+		AddWord2Scan(how, ReadMeaning(word, true, true), 0, depth, 0);
 	}
 }
 
@@ -745,7 +750,8 @@ nextsearch:  //   can do multiple searches, thought they have the same basemark 
 		{
 			++control; // now see flags on the choice
 			unsigned int flags = baseFlags;
-			if (choice[0] == '\'')  //dont expand this beyond its first leve --   $$tmp would come in with its value, which if set would fan out.  '$$tmp gets just its value
+			// dont treat 'tween_decks as an originalword request
+			if (choice[0] == '\'' ) //  && !IsAlphaUTF8(choice[1]))  //dont expand this beyond its first leve --   $$tmp would come in with its value, which if set would fan out.  '$$tmp gets just its value
 			{
 				flags |= ORIGINALWORD;
 				++choice;

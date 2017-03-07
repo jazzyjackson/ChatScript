@@ -43,8 +43,6 @@ void CloseCache()
 {
 	free(cacheBase);
 	cacheBase = NULL;
-	free(heapEnd);
-	heapEnd = NULL;
 }
 
 static void WriteCache(unsigned int which,size_t size)
@@ -103,7 +101,7 @@ static void WriteCache(unsigned int which,size_t size)
 	}
 #endif
 #endif
-	EncryptableFileWrite(ptr,1,size,out,userEncrypt); // user topic file write
+	EncryptableFileWrite(ptr,1,size,out,userEncrypt,"USER"); // user topic file write
 	userFileSystem.userClose(out);
 	if (trace & TRACE_USERCACHE) Log((server) ? SERVERLOG : STDTRACELOG,(char*)"write out cache (%d)\r\n",which);
 	if (timing & TIME_USERCACHE) {
@@ -205,16 +203,18 @@ void CopyUserTopicFile(char* newname)
 {
 	char file[SMALL_WORD_SIZE];
 	sprintf(file,(char*)"%s/topic_%s_%s.txt",users,loginID,computerID);
-
+	if (stricmp(language, "english")) sprintf(file, (char*)"%s/topic_%s_%s_%s.txt", users, loginID, computerID,language);
 	char newfile[MAX_WORD_SIZE];
 	sprintf(newfile,(char*)"LOGS/%s-topic_%s_%s.txt",newname,loginID,computerID);
-	CopyFile2File(file,newfile,false);	
+	if (stricmp(language, "english")) sprintf(newfile, (char*)"LOGS/%s-topic_%s_%s_%s.txt", newname, loginID, computerID, language);
+	CopyFile2File(file,newfile,false);
 }
 
 char* GetFileRead(char* user,char* computer)
 {
 	char word[MAX_WORD_SIZE];
 	sprintf(word,(char*)"%s/%stopic_%s_%s.txt",users,GetUserPath(loginID),user,computer);
+	if (stricmp(language,"english")) sprintf(word, (char*)"%s/%stopic_%s_%s_%s.txt", users, GetUserPath(loginID), user, computer,language);
 	char* buffer;
 	if ( filesystemOverride == NORMALFILES) // local files
 	{
@@ -260,7 +260,7 @@ char* GetFileRead(char* user,char* computer)
 	if (in) // read in data if file exists
 	{
 		size_t readit;
-		readit = DecryptableFileRead(buffer,1,userCacheSize,in,userEncrypt); // reading topic file of user
+		readit = DecryptableFileRead(buffer,1,userCacheSize,in,userEncrypt,"USER"); // reading topic file of user
 		buffer[readit] = 0;
 		buffer[readit+1] = 0; // insure nothing can overrun
 		userFileSystem.userClose(in);

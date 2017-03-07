@@ -73,6 +73,9 @@ extern unsigned int docSentenceCount;
 extern clock_t startTimeInfo;
 extern unsigned int outputLength;
 extern bool readingDocument;
+extern int inputRetryRejoinderTopic;
+extern int inputRetryRejoinderRuleID;
+
 extern bool callback;
 extern char inputCopy[INPUT_BUFFER_SIZE]; 
 extern unsigned char responseOrder[MAX_RESPONSE_SENTENCES+1];
@@ -97,8 +100,6 @@ extern unsigned long sourceStart;
 extern unsigned int sourceTokens;
 extern unsigned int sourceLines;
 extern char* version;
-extern int sentencePreparationIndex;
-extern int lastRestoredIndex;
 extern unsigned int tokenCount;
 extern unsigned int choiceCount;
 extern int externalTagger;
@@ -189,10 +190,12 @@ void InitStandalone();
 void CreateSystem();
 void ReloadSystem();
 void CloseSystem();
+void NLPipeline(int trace);
 void PartiallyCloseSystem();
 int main(int argc, char * argv[]);
 void ProcessOOB(char* buffer);
 void ComputeWhy(char* buffer, int n);
+void FlipResponses();
 
 // Input processing
 void MainLoop();

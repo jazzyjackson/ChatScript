@@ -2,7 +2,7 @@
 
 > © Bruce Wilcox, gowilcox@gmail.com brilligunderstanding.com
 
-> Revision 2/9/2017 cs7.2
+> Revision 3/4/2017 cs7.3
 
 You've written script. It doesn't work. Now what? Now you need to debug it, fix it, and
 recompile it. Debugging is mostly a matter of tracing what the system does testpaand
@@ -128,7 +128,7 @@ the above : statement show the list:
 :pennmatch         - FILE {raw ambig} compare penn file against internal result
 :pennnoun          - locate mass nouns in pennbank
 :pos               - Show results of tokenization and tagging
-:sortconcept       - Prepare concept file alphabetically
+:sortconcept       - Prepare concept file alphabetically (see writeup)
 :translateconcept  - TODO
 :timepos           - compute wps average to prepare inputs
 :verifypos         - Regress pos-tagging using default REGRESS/postest.txt file or named file
@@ -485,6 +485,11 @@ the log trace will only be from this input.
 
 You can also put in different input using `:retry`. This is a fast way to try alternatives in a
 context and see what the system would do.
+
+You can also designate a file you want loaded instead (if you have copied some previous user topic file out) by saying
+```
+:retry FILE filepath  _This is my input_
+```
 
 `:retry` is expected to be used on a stand-alone system. NORMAL servers only allow users
 in the authorizedip.txt file to use debug commands.. If retry has been server enabled
@@ -874,3 +879,24 @@ If before you were user bruce, login as `bruce:&` . Now if you say what you said
 ## When all else fails
 Usually you can email me for advice and solutions.
 
+# :sortconcept
+
+This takes one or all concepts currently compiled, and can neaten
+them up in various ways.
+
+`:sortconcept ~concept 1` will take the named concept and write it out to
+`cset.txt` as a single line, with members sorted alphabetically.
+
+`:sortconcept ~concept 0` will take the named concept and write it out to
+`cset.txt` as a multiple tidy lines, with members sorted alphabetically.
+
+`:sortconcept 1` will take the all built concept and write them out to
+`concepts.top` as a single line, with members sorted alphabetically and
+concept declarations sorted alphabetically. You can use this output to replace
+your original scripted concepts.
+
+`:sortconcept 0` will take the all built concept and write them out to
+`concepts.top` as a multiple line, with members sorted alphabetically. If you want
+the concept declarations sorted alphabetically, first do `:sortconcept 1`, then
+take `concepts.top` and replace your original script concepts from it. Then do this
+and then replace your original script concepts from this.

@@ -143,6 +143,7 @@ extern int startSentence;
 extern int endSentence;
 bool IsFraction(char* token);
 // boolean style tests
+bool AdjustUTF8(char* start, char* buffer);
 bool IsArithmeticOperator(char* word);
 unsigned IsNumber(char* word,bool placeAllowed = true); // returns kind of number
 bool IsPlaceNumber(char* word);

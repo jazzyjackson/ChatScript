@@ -5,6 +5,9 @@
 static std::mutex mtx;
 #endif 
 
+int loglimit = 0;
+static char encryptUser[200];
+static char encryptLTM[200];
 static char logLastCharacter = 0;
 #define MAX_STRING_SPACE 100000000  // transient+heap space 100MB
 unsigned long maxHeapBytes = MAX_STRING_SPACE;
@@ -39,8 +42,8 @@ bool showmem = false;
 int filesystemOverride = NORMALFILES;
 bool inLog = false;
 char* testOutput = NULL;					// testing commands output reroute
-static char encryptServer[200];
-static char decryptServer[200];
+static char encryptServer[1000];
+static char decryptServer[1000];
 
 // buffer information
 #define MAX_BUFFER_COUNT 80
@@ -276,11 +279,28 @@ void InitStackHeap()
 	stackStart = stackFree;
 }
 
+void FreeStackHeap()
+{
+	if (heapEnd)
+	{
+		free(heapEnd);
+		heapEnd = NULL;
+	}
+}
+
 char* AllocateStack(char* word, size_t len,bool localvar) // call with (0,len) to get a buffer
 {
 	if (infiniteStack) ReportBug("Allocating stack while InfiniteStack in progress from %s\r\n",infiniteCaller);
-	if (len == 0) len = strlen(word);
-    if ((stackFree + len + 1) >= heapFree - 5000) // dont get close
+	if (len == 0)
+	{
+		if (!word ) return NULL;
+		len = strlen(word);
+	}
+	if ((stackFree + len + 1) >= heapFree - 30000000) // dont get close
+	{
+		int xx = 0;
+	}
+	if ((stackFree + len + 1) >= heapFree - 5000) // dont get close
     {
 		ReportBug((char*)"Out of stack space stringSpace:%d ReleaseStackspace:%d \r\n",heapBase-heapFree,stackFree - stackStart);
 		return NULL;
@@ -408,6 +428,16 @@ bool PreallocateHeap(size_t len) // do we have the space
 	return true;
 }
 
+bool InHeap(char* ptr)
+{
+	return (ptr >= heapFree && ptr <= heapBase);
+}
+
+bool InStack(char* ptr)
+{
+	return (ptr < heapFree && ptr >= stackStart);
+}
+
 char* AllocateHeap(char* word,size_t len,int bytes,bool clear, bool purelocal) // BYTES means size of unit
 { //   string allocation moves BACKWARDS from end of dictionary space (as do meanings)
 /* Allocations during setup as :
@@ -428,7 +458,11 @@ Allocations happen during volley processing as
 8. JSON reading
 */
 	len *= bytes; // this many units of this size
-	if (len == 0 && word) len = strlen(word);
+	if (len == 0)
+	{
+		if (!word ) return NULL;
+		len = strlen(word);
+	}
 	if (word) ++len;	// null terminate string
 	if (purelocal) len += 2;	// for `` prefix
 	size_t allocationSize = len;
@@ -531,18 +565,18 @@ void InitUserFiles()
 #ifndef DISCARDJSON 
 FunctionResult JSONOpenCode(char* buffer);
 
-static size_t CleanupCryption(char* buffer,bool decrypt)
+static size_t CleanupCryption(char* buffer,bool decrypt,char* filekind)
 {
-	// clean up answer data
-	char* answer = strchr(buffer,'x');
+	// clean up answer data: {"datavalues": {"USER": xxxx }} 
+	char* answer = strstr(buffer,filekind);
 	if (!answer) 
 	{
 		*buffer = 0;
 		return 0;
 	}
-	int realsize = jsonOpenSize - 4 - (answer-buffer); // {"datavalues":{" + x:{" 
-	memmove(buffer,answer+4,realsize); // drop head data {"datavalues":{"x":"hello world"}}
-	realsize -= 3; // for "}} close
+	answer += strlen(filekind) + 2; // skip USER":
+	int realsize = jsonOpenSize - (answer-buffer) - 2; // the closing two }
+	memmove(buffer,answer,realsize); // drop head data 
 	buffer[realsize] = 0;	// remove trailing data
 
 	// legal json doesnt allow control characters, but we cannot change our file system ones to \r\n because
@@ -576,10 +610,19 @@ void ProtectNL(char* buffer) // save ascii \r\n in json - only comes from userda
 }
 
 bool notcrypting = false;
-static int JsonOpenCryption(char* buffer, size_t size, char* server, bool decrypt)
+static int JsonOpenCryption(char* buffer, size_t size, char* xserver, bool decrypt,char* filekind)
 {
 	if (size == 0) return 0;
 	if (notcrypting) return size;
+	if (decrypt && size > 50) return size; // it was never encrypted, this is original material
+	char server[1000];
+	char* id = loginID;
+	if (*id == 'b' && !id[1]) id = "u-8b02518d-c148-5d45-936b-491d39ced70c"; // cheat override to test outside of kore logins
+	if (decrypt) sprintf(server, "%s%s/datavalues/decryptedtokens", xserver, id);
+	else sprintf(server, "%s%s/datavalues/encryptedtokens", xserver, id);
+
+//loginID
+	// for decryption, the value we are passed is a quoted string. We need to avoid doubling those
 	
 #ifdef INFORMATION
 	// legal json requires these characters be escaped, but we cannot change our file system ones to \r\n because
@@ -597,15 +640,41 @@ static int JsonOpenCryption(char* buffer, size_t size, char* server, bool decryp
 	Note MongoDB code also encrypts \r\n the same way. but we dont know HERE that mongo is used
 	and we don't know THERE that encryption was used. That is redundant but minor.
 #endif
-	if (!decrypt) ProtectNL(buffer);
-
-	// prepare body for transfer to server to look like this:
-	// {"datavalues": {"x": "..."}} 
-	sprintf(buffer+size,"\"}}"); // add suffix to data
+	if (!decrypt) ProtectNL(buffer); // should not alter size
+	else // remember what we decrypt so we can overwrite it later when we save
+	{
+		if (!stricmp(filekind, "USER")) strcpy(encryptUser,buffer);
+		else strcpy(encryptLTM, buffer);
+	}
+	// prepare body for transfer to server to look like this for encryption:
+	// {"datavalues":{"user": {"data": {"userdata1":"abc"}}}
+	// or  {"datavalues":{"ltm": {"data": {"userdata1":"abc"}}}
+	// or   "{datavalues":{ "user": {"data": {"userdata1":"abc", "token" : "Sy4KoML_e"}}}
+	// FOR decryption: {"datavalues":{"USER": "HkD_r-KFl"}}
+	if (decrypt) sprintf(buffer + size, "}}"); // add suffix to data - no quote
+	else // encrypt gives a token if reusing
+	{
+		char* at = buffer + size;
+		char* which = NULL;
+		if (!stricmp(filekind, "USER")) which = encryptUser;
+		else which = encryptLTM;
+		if (which && *which)
+		{
+			sprintf(at,"\",\"token\": %s",which);
+			at += strlen(at); 
+		}
+		else
+		{
+			*at++ = '"';
+		}
+		sprintf(at, "}}}"); // add suffix to data
+	}
+	size += strlen(buffer+size);
 	char url[500];
-	sprintf(url,"{\"datavalues\":{\"x\":\"");
+	if (decrypt) sprintf(url, "{\"datavalues\":{\"%s\": ", filekind);
+	else sprintf(url, "{\"datavalues\":{\"%s\": {\"data\": \"", filekind);
 	int headerlen = strlen(url);
-	memmove(buffer+headerlen,buffer,size+4);
+	memmove(buffer+headerlen,buffer,size+1); // move the data over to put in the header
 	strncpy(buffer,url,headerlen);
 
 	// set up call to json open
@@ -616,7 +685,7 @@ static int JsonOpenCryption(char* buffer, size_t size, char* server, bool decryp
 	callArgumentBase = callArgumentIndex - 1;
 	callArgumentList[callArgumentIndex++] =   "direct"; // get the text of it gives us, dont make facts out of it
 	callArgumentList[callArgumentIndex++] =    "POST";
-	sprintf(url,server,loginID);
+	strcpy(url,server);
 	callArgumentList[callArgumentIndex++] =    url;
 	callArgumentList[callArgumentIndex++] =    (char*) buffer;
 	callArgumentList[callArgumentIndex++] =    header;
@@ -636,17 +705,17 @@ static int JsonOpenCryption(char* buffer, size_t size, char* server, bool decryp
 		ReportBug("Encrpytion/decryption server failed %s doing %s\r\n",buffer,decrypt ? (char*) "decrypt" : (char*) "encrypt");
 		return 0;
 	}
-	return CleanupCryption((char*) buffer,decrypt);
+	return CleanupCryption((char*) buffer,decrypt,filekind);
 }
 
-static size_t Decrypt(void* buffer,size_t size, size_t count, FILE* file)
+static size_t Decrypt(void* buffer,size_t size, size_t count, FILE* file,char* filekind)
 {
-	return JsonOpenCryption((char*) buffer, size * count,decryptServer,true);
+	return JsonOpenCryption((char*) buffer, size * count,decryptServer,true,filekind);
 }
 
-static size_t Encrypt(const void* buffer, size_t size, size_t count, FILE* file)
+static size_t Encrypt(const void* buffer, size_t size, size_t count, FILE* file,char* filekind)
 {
-	return JsonOpenCryption((char*) buffer, size * count,encryptServer,false);
+	return JsonOpenCryption((char*) buffer, size * count,encryptServer,false,filekind);
 }
 #endif
 
@@ -659,10 +728,16 @@ void EncryptInit(char* params) // required
 #endif
 }
 
+void ResetEncryptTags()
+{
+	encryptUser[0] = 0;
+	encryptLTM[0] = 0;
+}
+
 void DecryptInit(char* params) // required
 {
 	*decryptServer = 0;
-	if (*params) strcpy(decryptServer,params);
+	if (*params)  strcpy(decryptServer,params);
 #ifndef DISCARDJSON 
 	if (*decryptServer) userFileSystem.userDecrypt = Decrypt;
 #endif
@@ -676,18 +751,18 @@ void EncryptRestart() // required
 #endif
 }
 
-size_t DecryptableFileRead(void* buffer,size_t size, size_t count, FILE* file,bool decrypt)
+size_t DecryptableFileRead(void* buffer,size_t size, size_t count, FILE* file,bool decrypt,char* filekind)
 {
 	size_t len = userFileSystem.userRead(buffer,size,count,file);
-	if (userFileSystem.userDecrypt && decrypt) return userFileSystem.userDecrypt(buffer,1,len,file); // can revise buffer
+	if (userFileSystem.userDecrypt && decrypt) return userFileSystem.userDecrypt(buffer,1,len,file,filekind); // can revise buffer
 	return len;
 }
 
-size_t EncryptableFileWrite(void* buffer,size_t size, size_t count, FILE* file,bool encrypt)
+size_t EncryptableFileWrite(void* buffer,size_t size, size_t count, FILE* file,bool encrypt,char* filekind)
 {
 	if (userFileSystem.userEncrypt && encrypt) 
 	{
-		size_t msgsize = userFileSystem.userEncrypt(buffer,size,count,file); // can revise buffer
+		size_t msgsize = userFileSystem.userEncrypt(buffer,size,count,file,filekind); // can revise buffer
 		return userFileSystem.userWrite(buffer,1,msgsize,file);
 	}
 	else return userFileSystem.userWrite(buffer,size,count,file);
@@ -1359,8 +1434,37 @@ uint64 Hashit(unsigned char * data, int len,bool & hasUpperCharacters, bool & ha
 	{ 
 		unsigned char c = *data++;
 		if (!c) break;
-		if (c & 0x80) hasUTF8Characters = true;
-		else if (IsUpperCase(c)) 
+		if (c & 0x80)
+		{
+			hasUTF8Characters = true;
+			if (c == 0xc3 && *data >= 0x80 && *data <= 0x9e && *data != 0x97)
+			{
+				hasUpperCharacters = true;
+				crc = X64_Table[(crc >> 56) ^ c] ^ (crc << 8);
+				c = *data++; // get the cap form
+				c -= 0x80;
+				c += 0x9f; // get lower case form
+				--len;
+			}
+			else if (c >= 0xc4 && c <= 0xc9 && !(c & 1))
+			{
+				hasUpperCharacters = true;
+				crc = X64_Table[(crc >> 56) ^ c] ^ (crc << 8);
+				c = *data++; // get the cap form
+				c |= 1;  // get lower case form
+				--len;
+			}
+			else // other utf8, do all but last char
+			{
+				int size = UTFCharSize((char*)data - 1);
+				while (--size)
+				{
+					crc = X64_Table[(crc >> 56) ^ c] ^ (crc << 8);
+					c = *data++;
+				}
+			}
+		}
+		else if (c >= 0x41 && c <= 0x5a) // ordinary ascii
 		{
 			c += 32;
 			hasUpperCharacters = true;
@@ -1449,10 +1553,6 @@ bool LogEndedCleanly()
 unsigned int Log(unsigned int channel,const char * fmt, ...)
 {
 	if (channel == STDTRACELOG) channel = STDUSERLOG;
-    if (strchr(fmt, '\n') && !strchr(fmt, '\r'))
-    {
-        int xx = 0;
-    }
 	static unsigned int id = 1000;	
 	if (quitting) return id;
 	logged = true;
@@ -1722,28 +1822,76 @@ unsigned int Log(unsigned int channel,const char * fmt, ...)
     FILE* out = NULL;
 	
 	if (server && trace && !userLog) channel = SERVERLOG;	// force traced server to go to server log since no user log
-
+	char fname[MAX_WORD_SIZE];
     if (logFilename[0] != 0 && channel != SERVERLOG)  
 	{
-		out =  FopenUTF8WriteAppend(logFilename); 
+		strcpy(fname, logFilename);
+		out =  FopenUTF8WriteAppend(fname);
  		if (!out) // see if we can create the directory (assuming its missing)
 		{
 			char call[MAX_WORD_SIZE];
 			sprintf(call,(char*)"mkdir %s",users);
 			system(call);
-			out = userFileSystem.userCreate(logFilename);
-			if (!out && !inLog) ReportBug((char*)"unable to create user logfile %s",logFilename);
+			out = userFileSystem.userCreate(fname);
+			if (!out && !inLog) ReportBug((char*)"unable to create user logfile %s", fname);
 		}
 	}
     else // do server log 
 	{
-		out = FopenUTF8WriteAppend(serverLogfileName); 
+		strcpy(fname, serverLogfileName);
+		out = FopenUTF8WriteAppend(fname);
  		if (!out) // see if we can create the directory (assuming its missing)
 		{
 			char call[MAX_WORD_SIZE];
 			sprintf(call,(char*)"mkdir %s",logs);
 			system(call);
-			out = userFileSystem.userCreate(serverLogfileName);
+			out = userFileSystem.userCreate(fname);
+		}
+
+		if (loglimit)
+		{ 
+			// roll log if it is too big
+			int64 size;
+			int r = fseek(out, 0, SEEK_END);
+	#ifdef WIN32
+			size = _ftelli64(out);
+	#else
+			size = ftello(out);
+	#endif
+			// get MB count of it roughly
+			size /= 1000000;  // MB bytes
+			if (size >= loglimit)
+			{
+				fclose(out);
+				time_t curr = time(0);
+				char* when = GetMyTime(curr); // now
+				char newname[MAX_WORD_SIZE];
+				char* old = strrchr(fname, '/');
+				strcpy(newname, old+1); // just the name, no directory path
+				char* at = strrchr(newname, '.');
+				sprintf(at, "-%s.txt",when);
+				at = strchr(newname, ':');
+				*at = '-';
+				at = strchr(newname, ':');
+				*at = '-';
+
+#ifdef WIN32
+				SetCurrentDirectory((char*)"LOGS"); 
+#else
+				chdir((char*)"LOGS");
+#endif
+				int result = rename(old+1, newname); // some renames cant handle directory spec
+				if (result != 0) 
+					perror("Error renaming file");
+
+#ifdef WIN32
+				SetCurrentDirectory((char*)"..");
+#else
+				chdir((char*)"..");
+#endif
+
+				out = FopenUTF8WriteAppend(fname);
+			}
 		}
 	}
 

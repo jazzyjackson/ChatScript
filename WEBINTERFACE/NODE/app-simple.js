@@ -50,7 +50,15 @@ app.get('/chat', (req,res) => {
     .catch(error => res.status(400).send(error))
 })
 
+let httpport = process.env.PORT || localhostPort;
 
-let port = process.env.PORT || localhostPort;
-server.listen(port);
-console.log(`Listening on ${port}`)
+ChatScript.chat("","PING","")
+.then(()=>{
+    server.listen(httpport)
+    console.log(`Found ChatScript on port ${chatscript_config.port}. App listening on ${httpport}`)
+})
+.catch(()=>{
+    ChatScript.startServer()
+    server.listen(httpport)
+    console.log(`Started ChatScript on port ${chatscript_config.port}. App listening on ${httpport}`)    
+})

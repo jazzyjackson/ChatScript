@@ -3,7 +3,7 @@ input.addEventListener('submit', event => {
     event.preventDefault()
     let input = event.target.elements[0]
     disableInput(input, true)
-    fetch('./chat?message=' + encodeURIComponent(input.value))
+    fetch('./chat?message=' + encodeURIComponent(input.value || '...')) //if user input is empty, send ... instead, so as not to reset the conversation.
     .then(responseObj => responseObj.json())
     .then(makeBubbles)
     .then(()=>disableInput(input, false))

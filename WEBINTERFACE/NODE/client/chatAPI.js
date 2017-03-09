@@ -46,7 +46,8 @@ function disableInput(inputNode, disabled){
 }
 
 HTMLDivElement.prototype.prependChild = function(htmlNode){
+    console.log(this)
     this.insertBefore(htmlNode, this.children[1])
 }
 
-(location.hash == 'debug') && (window.debugmode = true) //set debug mode if page is loaded with hash.
+if(location.hash == '#debug'){window.debugmode = true} 

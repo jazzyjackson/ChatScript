@@ -4,6 +4,7 @@
   "description": "A node API and GUI for ChatScript",
   "main": "app-simple.js",
   "scripts": {
+    "start": "node app-simple.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "Colten Jackson",
